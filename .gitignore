@@ -1,0 +1,5 @@
+bin/
+data/
+*.duckdb
+*.duckdb.wal
+cluster.json
