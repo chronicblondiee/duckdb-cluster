@@ -40,6 +40,11 @@ func NewServer(c *cluster.Cluster) *Server {
 	return s
 }
 
+// Handler returns the HTTP handler
+func (s *Server) Handler() http.Handler {
+	return s.mux
+}
+
 func (s *Server) Start(addr string) error {
 	srv := &http.Server{
 		Addr:    addr,

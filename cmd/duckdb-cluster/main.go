@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,8 +9,14 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/brown/duckdb-cluster/internal/api"
 	"github.com/brown/duckdb-cluster/internal/cluster"
+	"github.com/brown/duckdb-cluster/internal/config"
+	"github.com/brown/duckdb-cluster/internal/distributor"
+	"github.com/brown/duckdb-cluster/internal/frontend"
+	"github.com/brown/duckdb-cluster/internal/ingester"
+	"github.com/brown/duckdb-cluster/internal/module"
+	"github.com/brown/duckdb-cluster/internal/modules"
+	"github.com/brown/duckdb-cluster/internal/querier"
 )
 
 func main() {
@@ -45,15 +52,22 @@ func cmdInit(args []string) {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	shards := fs.Int("shards", 3, "number of shards")
 	dataDir := fs.String("data-dir", "./data", "data directory")
+	configPath := fs.String("config", "config.yaml", "config file to create")
 	fs.Parse(args)
 
-	cfg := &cluster.Config{
+	// Create config
+	cfg := config.Default()
+	cfg.Common.DataDir = *dataDir
+	cfg.Common.NumShards = *shards
+
+	// Initialize cluster using old method for backward compatibility
+	legacyCfg := &cluster.Config{
 		DataDir:    *dataDir,
 		NumShards:  *shards,
-		ListenAddr: ":8080",
+		ListenAddr: cfg.Server.HTTPListenAddr,
 	}
 
-	c, err := cluster.NewCluster(cfg)
+	c, err := cluster.NewCluster(legacyCfg)
 	if err != nil {
 		slog.Error("failed to create cluster", "error", err)
 		os.Exit(1)
@@ -64,44 +78,97 @@ func cmdInit(args []string) {
 		os.Exit(1)
 	}
 
+	// Save new YAML config
+	if err := cfg.Save(*configPath); err != nil {
+		slog.Error("failed to save config", "error", err)
+		os.Exit(1)
+	}
+
 	fmt.Printf("Cluster initialized with %d shards in %s\n", *shards, *dataDir)
+	fmt.Printf("Configuration saved to %s\n", *configPath)
 }
 
 func cmdStart(args []string) {
 	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	configPath := fs.String("config", "config.yaml", "path to config file")
+	target := fs.String("target", "", "target to run (all, write, read, backend)")
 	addr := fs.String("addr", "", "listen address (overrides config)")
 	dataDir := fs.String("data-dir", "", "data directory (overrides config)")
 	fs.Parse(args)
 
-	cfg, err := cluster.LoadConfig("cluster.json")
+	// Load configuration
+	cfg, err := config.Load(*configPath)
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
 
+	// Apply overrides
+	if *target != "" {
+		cfg.Target = *target
+	}
 	if *addr != "" {
-		cfg.ListenAddr = *addr
+		cfg.Server.HTTPListenAddr = *addr
 	}
 	if *dataDir != "" {
-		cfg.DataDir = *dataDir
+		cfg.Common.DataDir = *dataDir
 	}
 
-	c, err := cluster.NewCluster(cfg)
-	if err != nil {
-		slog.Error("failed to create cluster", "error", err)
-		os.Exit(1)
-	}
-
-	if err := c.Start(); err != nil {
+	// Start the cluster using module system
+	if err := startCluster(cfg); err != nil {
 		slog.Error("failed to start cluster", "error", err)
 		os.Exit(1)
 	}
+}
 
-	srv := api.NewServer(c)
-	if err := srv.Start(cfg.ListenAddr); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+func startCluster(cfg *config.Config) error {
+	slog.Info("starting duckdb-cluster", "target", cfg.Target, "data_dir", cfg.Common.DataDir)
+
+	// Create module manager
+	mgr := module.NewManager()
+
+	// Create components
+	ing := ingester.NewIngester(cfg)
+	quer := querier.NewQuerier(cfg)
+	dist := distributor.NewDistributor(cfg, ing)
+	fe := frontend.NewQueryFrontend(cfg, quer)
+
+	// Create cluster facade for API compatibility
+	clust := &cluster.Cluster{
+		Config: &cluster.Config{
+			DataDir:    cfg.Common.DataDir,
+			NumShards:  cfg.Common.NumShards,
+			ListenAddr: cfg.Server.HTTPListenAddr,
+		},
 	}
+
+	// In monolithic mode, we need to initialize the ingester first
+	// to populate the cluster's Manager and Router
+	ctx := context.Background()
+	if err := ing.Init(ctx); err != nil {
+		return fmt.Errorf("failed to init ingester: %w", err)
+	}
+	clust.Manager = ing.GetManager()
+	clust.Router = ing.GetRouter()
+
+	// Register modules
+	mgr.Register(modules.NewIngesterModule(cfg, ing))
+	mgr.Register(modules.NewQuerierModule(cfg, quer))
+	mgr.Register(modules.NewDistributorModule(cfg, dist))
+	mgr.Register(modules.NewQueryFrontendModule(cfg, fe))
+	mgr.Register(modules.NewAdminModule(cfg))
+	mgr.Register(modules.NewCompactorModule(cfg))
+	mgr.Register(modules.NewServerModule(cfg, clust))
+
+	// Start modules based on target
+	if err := mgr.Start(ctx, cfg.Target); err != nil {
+		return fmt.Errorf("failed to start modules: %w", err)
+	}
+
+	slog.Info("cluster started successfully", "target", cfg.Target)
+
+	// Block forever (modules handle their own shutdown)
+	select {}
 }
 
 func cmdStatus(args []string) {

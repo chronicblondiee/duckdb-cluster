@@ -21,9 +21,21 @@ make build
 ## CLI
 
 ```
-duckdb-cluster init [--shards N] [--data-dir PATH]
-duckdb-cluster start [--addr :8080] [--data-dir PATH]
+duckdb-cluster init [--shards N] [--data-dir PATH] [--config PATH]
+duckdb-cluster start [--config PATH] [--target MODE] [--addr :8080] [--data-dir PATH]
 duckdb-cluster status [--addr :8080]
+```
+
+**Examples:**
+```bash
+# Initialize with custom config
+./duckdb-cluster init --shards 5 --data-dir /var/lib/duckdb --config prod.yaml
+
+# Start with specific target
+./duckdb-cluster start --config prod.yaml --target all
+
+# Override listen address
+./duckdb-cluster start --config prod.yaml --addr :9090
 ```
 
 ## API
@@ -203,27 +215,74 @@ Each shard is a standalone DuckDB file (`shard_000.duckdb`, `shard_001.duckdb`, 
 
 ```
 duckdb-cluster/
-├── cmd/duckdb-cluster/     CLI entrypoint
+├── cmd/duckdb-cluster/     CLI entrypoint with module system
 ├── internal/
+│   ├── module/             Module lifecycle manager
+│   ├── modules/            Module implementations (server, ingester, querier, etc.)
+│   ├── config/             YAML configuration system
+│   ├── distributor/        Write path validation and routing
+│   ├── ingester/           Shard ownership and writes
+│   ├── querier/            Query execution
+│   ├── frontend/           Query coordination with retries
+│   ├── ring/               Consistent hash ring for distributed mode
 │   ├── shard/              Single shard wrapper + multi-shard manager
 │   ├── router/             Query classification, hash routing, result merging
-│   ├── cluster/            Cluster controller + JSON config
+│   ├── cluster/            Cluster controller (backward compatibility)
 │   └── api/                HTTP server + REST handlers
+├── checkpoint/             Development progress snapshots
 ├── Makefile
-└── cluster.json            Generated config (after init)
+└── config.yaml             Generated config (after init)
 ```
 
 ## Configuration
 
-`cluster.json` is created by `init` and read by `start`:
+Configuration can be provided via YAML file (recommended) or falls back to sensible defaults.
 
-```json
-{
-  "data_dir": "./data",
-  "num_shards": 3,
-  "listen_addr": ":8080"
-}
+### YAML Configuration
+
+`config.yaml` is created by `init` and read by `start`:
+
+```yaml
+target: all  # all | write | read | backend
+
+common:
+  data_dir: ./data
+  num_shards: 3
+  log_level: info
+
+server:
+  http_listen_addr: :8080
+  grpc_listen_addr: :9095
+  shutdown_timeout: 30s
+
+distributor:
+  max_query_length: 1048576  # 1MB
+
+ingester:
+  max_shards_per_instance: 10
+
+querier:
+  merge_strategy: duckdb
+  max_concurrent_queries: 100
+  query_timeout: 60s
+
+query_frontend:
+  query_timeout: 60s
+  max_retries: 3
 ```
+
+### Target Modes
+
+The system supports multiple deployment targets for future distributed deployments:
+
+| Target | Components | Use Case |
+|---|---|---|
+| `all` | All modules | Single-node deployment (default) |
+| `write` | server, distributor, ingester | Write-only node |
+| `read` | server, query-frontend, querier | Read-only node |
+| `backend` | server, admin, compactor | Admin/maintenance node |
+
+**Current:** Only `all` (monolithic) mode is production-ready.
 
 ## Development
 
@@ -237,4 +296,34 @@ make clean    # Remove bin/ and data/
 ## Dependencies
 
 - [duckdb-go/v2](https://github.com/duckdb/duckdb-go) — DuckDB driver for Go
-- Go stdlib only for everything else (net/http, database/sql, hash/fnv, encoding/json)
+- [yaml.v3](https://gopkg.in/yaml.v3) — YAML configuration parsing
+- Go stdlib for everything else (net/http, database/sql, hash/fnv, context, sync)
+
+## Features
+
+### Phase 1: Core Clustering
+✅ Hash-based sharding with FNV-1a  
+✅ Query classification (DDL, Read, Write)  
+✅ Write routing to single shard  
+✅ Read fan-out with result merging  
+✅ DDL broadcast to all shards  
+
+### Phase 2: Elasticsearch-Inspired APIs
+✅ Pagination support (offset/limit)  
+✅ Bulk operations endpoint  
+✅ Multi-query concurrent execution  
+✅ Table introspection  
+✅ Enhanced cluster statistics  
+
+### Phase 3: Loki-Inspired Architecture
+✅ Module system with dependency resolution  
+✅ YAML configuration with hierarchical structure  
+✅ Component separation (Distributor, Ingester, Querier, Frontend)  
+✅ Consistent hash ring for future distributed mode  
+✅ Multiple deployment targets (all, write, read, backend)  
+
+### Future: Phase 4 (Planned)
+- Go client library with high-level API
+- BulkIndexer for async batch inserts
+- Connection pooling and automatic retries
+- gRPC transport for distributed multi-node deployments
