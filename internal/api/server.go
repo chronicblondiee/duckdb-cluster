@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chronicblondiee/duckdb-cluster/internal/backup"
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
 	"github.com/chronicblondiee/duckdb-cluster/internal/config"
 	"github.com/chronicblondiee/duckdb-cluster/internal/security"
@@ -21,6 +22,7 @@ type Server struct {
 	authenticator *security.Authenticator
 	authorizer    *security.Authorizer
 	rateLimiter   *security.RateLimiter
+	backupManager *backup.BackupManager
 }
 
 func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
@@ -45,12 +47,19 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 		PerAPIKey:         cfg.Security.RateLimit.PerAPIKey,
 	})
 	
+	// Initialize backup manager
+	backupManager, err := backup.NewBackupManager(cfg)
+	if err != nil {
+		return nil, err
+	}
+	
 	s := &Server{
 		Cluster:       c,
 		mux:           http.NewServeMux(),
 		authenticator: authenticator,
 		authorizer:    authorizer,
 		rateLimiter:   rateLimiter,
+		backupManager: backupManager,
 	}
 	
 	// Query endpoints
@@ -70,6 +79,12 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	s.mux.HandleFunc("POST /admin/auth/token", s.handleGenerateToken)
 	s.mux.HandleFunc("POST /admin/auth/apikey", s.handleRegisterAPIKey)
 	s.mux.HandleFunc("DELETE /admin/auth/apikey", s.handleRevokeAPIKey)
+	
+	// Backup endpoints
+	s.mux.HandleFunc("POST /admin/backups", s.handleCreateBackup)
+	s.mux.HandleFunc("GET /admin/backups", s.handleListBackups)
+	s.mux.HandleFunc("POST /admin/backups/", s.handleRestoreBackup) // Handles /admin/backups/{id}/restore
+	s.mux.HandleFunc("DELETE /admin/backups/", s.handleDeleteBackup) // Handles /admin/backups/{id}
 	
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)

@@ -48,6 +48,9 @@ type Config struct {
 	
 	// Reliability configuration
 	Reliability ReliabilityConfig `yaml:"reliability"`
+	
+	// Backup configuration
+	Backup BackupConfig `yaml:"backup"`
 }
 
 // CommonConfig contains settings shared across components
@@ -353,6 +356,24 @@ type DegradationConfig struct {
 	ErrorThreshold int `yaml:"error_threshold"`
 }
 
+// BackupConfig configures backup and restore
+type BackupConfig struct {
+	// StorageType specifies where backups are stored: "local", "s3", "gcs"
+	StorageType string `yaml:"storage_type"`
+	
+	// LocalPath is the directory for local backups
+	LocalPath string `yaml:"local_path"`
+	
+	// Compression enables gzip compression of backups
+	Compression bool `yaml:"compression"`
+	
+	// Retention is the number of backups to retain (0 = unlimited)
+	Retention int `yaml:"retention"`
+	
+	// ScheduleInterval is the interval for automatic backups (0 = disabled)
+	ScheduleInterval time.Duration `yaml:"schedule_interval"`
+}
+
 // Default returns a config with sensible defaults
 func Default() *Config {
 	return &Config{
@@ -464,6 +485,13 @@ func Default() *Config {
 				AutoDegrade:    false,
 				ErrorThreshold: 10,
 			},
+		},
+		Backup: BackupConfig{
+			StorageType:      "local",
+			LocalPath:        "./data/backups",
+			Compression:      true,
+			Retention:        7, // Keep last 7 backups
+			ScheduleInterval: 0, // Disabled by default
 		},
 	}
 }
