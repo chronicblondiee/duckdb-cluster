@@ -2,6 +2,8 @@ package router
 
 import (
 	"context"
+	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/brown/duckdb-cluster/internal/shard"
@@ -14,8 +16,12 @@ func setupRouter(t *testing.T) *Router {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	t.Cleanup(func() { m.CloseAll() })
-	return NewRouter(m)
+	r := NewRouter(m)
+	t.Cleanup(func() {
+		r.Close()
+		m.CloseAll()
+	})
+	return r
 }
 
 func TestDDLBroadcast(t *testing.T) {
@@ -100,4 +106,384 @@ func TestReadFanOut(t *testing.T) {
 	if len(result.Rows) != 10 {
 		t.Errorf("expected 10 merged rows, got %d", len(result.Rows))
 	}
+}
+
+// TestMergeAggregations tests that aggregations are properly merged
+func TestMergeAggregations(t *testing.T) {
+	r := setupRouter(t)
+	ctx := context.Background()
+
+	// Create table with numeric data
+	_, err := r.Route(ctx, "CREATE TABLE sales (id INTEGER, amount INTEGER, region VARCHAR)", "")
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	// Insert data across shards
+	testData := []struct {
+		id     int
+		amount int
+		region string
+	}{
+		{1, 100, "north"},
+		{2, 200, "south"},
+		{3, 150, "north"},
+		{4, 300, "south"},
+		{5, 250, "north"},
+		{6, 400, "south"},
+	}
+
+	for _, d := range testData {
+		sql := fmt.Sprintf("INSERT INTO sales VALUES (%d, %d, '%s')", d.id, d.amount, d.region)
+		_, err := r.Route(ctx, sql, fmt.Sprintf("%d", d.id))
+		if err != nil {
+			t.Fatalf("INSERT: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		sql      string
+		expected map[string]any
+	}{
+		{
+			name: "COUNT",
+			sql:  "SELECT COUNT(*) as cnt FROM sales",
+			expected: map[string]any{
+				"cnt": int64(6),
+			},
+		},
+		{
+			name: "SUM",
+			sql:  "SELECT SUM(amount) as total FROM sales",
+			expected: map[string]any{
+				"total": int64(1400), // 100+200+150+300+250+400
+			},
+		},
+		{
+			name: "AVG",
+			sql:  "SELECT AVG(amount) as avg FROM sales",
+			expected: map[string]any{
+				"avg": float64(233.33), // approximate
+			},
+		},
+		{
+			name: "MIN",
+			sql:  "SELECT MIN(amount) as min FROM sales",
+			expected: map[string]any{
+				"min": int64(100),
+			},
+		},
+		{
+			name: "MAX",
+			sql:  "SELECT MAX(amount) as max FROM sales",
+			expected: map[string]any{
+				"max": int64(400),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := r.Route(ctx, tt.sql, "")
+			if err != nil {
+				t.Fatalf("query failed: %v", err)
+			}
+
+			if len(result.Rows) != 1 {
+				t.Fatalf("expected 1 row, got %d", len(result.Rows))
+			}
+
+			row := result.Rows[0]
+			for key, expectedVal := range tt.expected {
+				actualVal, ok := row[key]
+				if !ok {
+					t.Errorf("column %s not found in result", key)
+					continue
+				}
+
+				// Handle numeric comparisons with type flexibility
+				if tt.name == "AVG" {
+					// For averages, check approximate equality
+					actual := toFloat64(actualVal)
+					expected := toFloat64(expectedVal)
+					if abs(actual-expected) > 0.1 {
+						t.Errorf("%s: expected %v, got %v", key, expected, actual)
+					}
+				} else {
+					// For other aggregations, convert to int64 for comparison
+					actual := toInt64(actualVal)
+					expected := toInt64(expectedVal)
+					if actual != expected {
+						t.Errorf("%s: expected %v, got %v", key, expected, actual)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestMergeGroupBy tests GROUP BY aggregations
+func TestMergeGroupBy(t *testing.T) {
+	r := setupRouter(t)
+	ctx := context.Background()
+
+	_, err := r.Route(ctx, "CREATE TABLE sales (id INTEGER, amount INTEGER, region VARCHAR)", "")
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	testData := []struct {
+		id     int
+		amount int
+		region string
+	}{
+		{1, 100, "north"},
+		{2, 200, "south"},
+		{3, 150, "north"},
+		{4, 300, "south"},
+		{5, 250, "north"},
+		{6, 400, "south"},
+	}
+
+	for _, d := range testData {
+		sql := fmt.Sprintf("INSERT INTO sales VALUES (%d, %d, '%s')", d.id, d.amount, d.region)
+		_, err := r.Route(ctx, sql, fmt.Sprintf("%d", d.id))
+		if err != nil {
+			t.Fatalf("INSERT: %v", err)
+		}
+	}
+
+	result, err := r.Route(ctx, "SELECT region, COUNT(*) as cnt, SUM(amount) as total FROM sales GROUP BY region", "")
+	if err != nil {
+		t.Fatalf("GROUP BY query: %v", err)
+	}
+
+	if len(result.Rows) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(result.Rows))
+	}
+
+	// Build map of results by region
+	results := make(map[string]map[string]any)
+	for _, row := range result.Rows {
+		region := row["region"].(string)
+		results[region] = row
+	}
+
+	// Verify north region
+	if north, ok := results["north"]; ok {
+		if toInt64(north["cnt"]) != 3 {
+			t.Errorf("north count: expected 3, got %v", north["cnt"])
+		}
+		if toInt64(north["total"]) != 500 { // 100+150+250
+			t.Errorf("north total: expected 500, got %v", north["total"])
+		}
+	} else {
+		t.Error("north region not found")
+	}
+
+	// Verify south region
+	if south, ok := results["south"]; ok {
+		if toInt64(south["cnt"]) != 3 {
+			t.Errorf("south count: expected 3, got %v", south["cnt"])
+		}
+		if toInt64(south["total"]) != 900 { // 200+300+400
+			t.Errorf("south total: expected 900, got %v", south["total"])
+		}
+	} else {
+		t.Error("south region not found")
+	}
+}
+
+// TestMergeOrderBy tests ORDER BY clause
+func TestMergeOrderBy(t *testing.T) {
+	r := setupRouter(t)
+	ctx := context.Background()
+
+	_, err := r.Route(ctx, "CREATE TABLE items (id INTEGER, value INTEGER)", "")
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	// Insert unsorted data
+	testData := []struct{ id, value int }{
+		{5, 50}, {2, 20}, {8, 80}, {1, 10}, {9, 90}, {3, 30}, {7, 70}, {4, 40}, {6, 60},
+	}
+
+	for _, d := range testData {
+		sql := fmt.Sprintf("INSERT INTO items VALUES (%d, %d)", d.id, d.value)
+		_, err := r.Route(ctx, sql, fmt.Sprintf("%d", d.id))
+		if err != nil {
+			t.Fatalf("INSERT: %v", err)
+		}
+	}
+
+	// Test ORDER BY ASC
+	result, err := r.Route(ctx, "SELECT * FROM items ORDER BY value ASC", "")
+	if err != nil {
+		t.Fatalf("ORDER BY ASC: %v", err)
+	}
+
+	if len(result.Rows) != len(testData) {
+		t.Fatalf("expected %d rows, got %d", len(testData), len(result.Rows))
+	}
+
+	// Verify ascending order
+	for i := 0; i < len(result.Rows)-1; i++ {
+		curr := toInt64(result.Rows[i]["value"])
+		next := toInt64(result.Rows[i+1]["value"])
+		if curr > next {
+			t.Errorf("not sorted ascending: row %d value %d > row %d value %d", i, curr, i+1, next)
+		}
+	}
+
+	// Test ORDER BY DESC
+	result, err = r.Route(ctx, "SELECT * FROM items ORDER BY value DESC", "")
+	if err != nil {
+		t.Fatalf("ORDER BY DESC: %v", err)
+	}
+
+	// Verify descending order
+	for i := 0; i < len(result.Rows)-1; i++ {
+		curr := toInt64(result.Rows[i]["value"])
+		next := toInt64(result.Rows[i+1]["value"])
+		if curr < next {
+			t.Errorf("not sorted descending: row %d value %d < row %d value %d", i, curr, i+1, next)
+		}
+	}
+}
+
+// TestMergeLimit tests LIMIT and OFFSET
+func TestMergeLimit(t *testing.T) {
+	r := setupRouter(t)
+	ctx := context.Background()
+
+	_, err := r.Route(ctx, "CREATE TABLE items (id INTEGER)", "")
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	// Insert 30 rows
+	for i := 1; i <= 30; i++ {
+		sql := fmt.Sprintf("INSERT INTO items VALUES (%d)", i)
+		_, err := r.Route(ctx, sql, fmt.Sprintf("%d", i))
+		if err != nil {
+			t.Fatalf("INSERT: %v", err)
+		}
+	}
+
+	// Test LIMIT
+	result, err := r.Route(ctx, "SELECT * FROM items ORDER BY id LIMIT 10", "")
+	if err != nil {
+		t.Fatalf("LIMIT: %v", err)
+	}
+
+	if len(result.Rows) != 10 {
+		t.Errorf("LIMIT 10: expected 10 rows, got %d", len(result.Rows))
+	}
+
+	// Test LIMIT with OFFSET
+	result, err = r.Route(ctx, "SELECT * FROM items ORDER BY id LIMIT 5 OFFSET 10", "")
+	if err != nil {
+		t.Fatalf("LIMIT OFFSET: %v", err)
+	}
+
+	if len(result.Rows) != 5 {
+		t.Errorf("LIMIT 5 OFFSET 10: expected 5 rows, got %d", len(result.Rows))
+	}
+
+	// Verify correct offset (should be ids 11-15)
+	if len(result.Rows) > 0 {
+		firstID := toInt64(result.Rows[0]["id"])
+		if firstID != 11 {
+			t.Errorf("OFFSET 10: expected first id to be 11, got %d", firstID)
+		}
+	}
+}
+
+// TestMergeDistinct tests SELECT DISTINCT
+func TestMergeDistinct(t *testing.T) {
+	r := setupRouter(t)
+	ctx := context.Background()
+
+	_, err := r.Route(ctx, "CREATE TABLE items (category VARCHAR)", "")
+	if err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	// Insert duplicate categories across shards
+	categories := []string{"A", "B", "C", "A", "B", "C", "A", "B", "C"}
+	for i, cat := range categories {
+		sql := fmt.Sprintf("INSERT INTO items VALUES ('%s')", cat)
+		_, err := r.Route(ctx, sql, fmt.Sprintf("%d", i))
+		if err != nil {
+			t.Fatalf("INSERT: %v", err)
+		}
+	}
+
+	// Test DISTINCT
+	result, err := r.Route(ctx, "SELECT DISTINCT category FROM items ORDER BY category", "")
+	if err != nil {
+		t.Fatalf("DISTINCT: %v", err)
+	}
+
+	if len(result.Rows) != 3 {
+		t.Errorf("DISTINCT: expected 3 unique categories, got %d", len(result.Rows))
+	}
+
+	// Verify correct categories
+	expected := []string{"A", "B", "C"}
+	for i, row := range result.Rows {
+		cat := row["category"].(string)
+		if cat != expected[i] {
+			t.Errorf("row %d: expected %s, got %s", i, expected[i], cat)
+		}
+	}
+}
+
+// Helper functions for type conversions
+func toInt64(v any) int64 {
+	switch val := v.(type) {
+	case int64:
+		return val
+	case int32:
+		return int64(val)
+	case int:
+		return int64(val)
+	case float64:
+		return int64(val)
+	case float32:
+		return int64(val)
+	case *big.Int:
+		if val != nil {
+			return val.Int64()
+		}
+		return 0
+	default:
+		return 0
+	}
+}
+
+func toFloat64(v any) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case float32:
+		return float64(val)
+	case int64:
+		return float64(val)
+	case int32:
+		return float64(val)
+	case int:
+		return float64(val)
+	default:
+		return 0
+	}
+}
+
+func abs(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

@@ -9,6 +9,13 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
+// QueryResultSet contains query results with schema information
+type QueryResultSet struct {
+	Columns []string
+	Types   []string // SQL types from rows.ColumnTypes()
+	Rows    []map[string]any
+}
+
 type Shard struct {
 	ID   int
 	Path string
@@ -45,6 +52,14 @@ func (s *Shard) Execute(ctx context.Context, query string, args ...any) (sql.Res
 }
 
 func (s *Shard) Query(ctx context.Context, query string, args ...any) ([]map[string]any, error) {
+	resultSet, err := s.QueryWithSchema(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	return resultSet.Rows, nil
+}
+
+func (s *Shard) QueryWithSchema(ctx context.Context, query string, args ...any) (*QueryResultSet, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -54,6 +69,16 @@ func (s *Shard) Query(ctx context.Context, query string, args ...any) ([]map[str
 	cols, err := rows.Columns()
 	if err != nil {
 		return nil, err
+	}
+
+	colTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+
+	types := make([]string, len(colTypes))
+	for i, ct := range colTypes {
+		types[i] = ct.DatabaseTypeName()
 	}
 
 	var results []map[string]any
@@ -72,5 +97,14 @@ func (s *Shard) Query(ctx context.Context, query string, args ...any) ([]map[str
 		}
 		results = append(results, row)
 	}
-	return results, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &QueryResultSet{
+		Columns: cols,
+		Types:   types,
+		Rows:    results,
+	}, nil
 }

@@ -22,10 +22,20 @@ func NewServer(c *cluster.Cluster) *Server {
 		Cluster: c,
 		mux:     http.NewServeMux(),
 	}
+	// Query endpoints
 	s.mux.HandleFunc("POST /query", s.handleQuery)
+	s.mux.HandleFunc("POST /bulk", s.handleBulk)
+	s.mux.HandleFunc("POST /multi-query", s.handleMultiQuery)
+	
+	// Admin endpoints
 	s.mux.HandleFunc("GET /admin/shards", s.handleListShards)
 	s.mux.HandleFunc("POST /admin/shards", s.handleAddShard)
 	s.mux.HandleFunc("DELETE /admin/shards/{id}", s.handleRemoveShard)
+	s.mux.HandleFunc("GET /admin/tables", s.handleListTables)
+	s.mux.HandleFunc("GET /admin/tables/{name}", s.handleTableSchema)
+	s.mux.HandleFunc("GET /admin/stats", s.handleStats)
+	
+	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	return s
 }

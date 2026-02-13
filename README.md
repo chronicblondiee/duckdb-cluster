@@ -45,9 +45,9 @@ curl -X POST localhost:8080/query \
 curl -X POST localhost:8080/query \
   -d '{"sql": "INSERT INTO users VALUES (1, '\''alice'\'')", "partition_key": "1"}'
 
-# Query all shards
+# Query all shards with pagination
 curl -X POST localhost:8080/query \
-  -d '{"sql": "SELECT * FROM users"}'
+  -d '{"sql": "SELECT * FROM users ORDER BY id", "limit": 10, "offset": 0}'
 ```
 
 **Write request:**
@@ -70,10 +70,108 @@ curl -X POST localhost:8080/query \
 }
 ```
 
+**Pagination:** Add `offset` and `limit` to any read query:
+```json
+{"sql": "SELECT * FROM users ORDER BY id", "offset": 20, "limit": 10}
+```
+
+### POST /bulk
+
+Execute multiple statements in a single request. Statements are grouped by target shard and executed in parallel.
+
+```bash
+curl -X POST localhost:8080/bulk -d '{
+  "statements": [
+    {"sql": "INSERT INTO users VALUES (1, '\''alice'\'')", "partition_key": "1"},
+    {"sql": "INSERT INTO users VALUES (2, '\''bob'\'')", "partition_key": "2"},
+    {"sql": "INSERT INTO users VALUES (3, '\''charlie'\'')", "partition_key": "3"}
+  ]
+}'
+```
+
+**Response:**
+```json
+{
+  "succeeded": 3,
+  "failed": 0,
+  "took_ms": 45,
+  "results": [
+    {"shard": 0, "rows_affected": 1, "success": true},
+    {"shard": 1, "rows_affected": 1, "success": true},
+    {"shard": 2, "rows_affected": 1, "success": true}
+  ]
+}
+```
+
+### POST /multi-query
+
+Execute multiple queries concurrently. Perfect for dashboards that need multiple metrics simultaneously.
+
+```bash
+curl -X POST localhost:8080/multi-query -d '{
+  "queries": [
+    {"sql": "SELECT COUNT(*) as cnt FROM users"},
+    {"sql": "SELECT AVG(age) as avg_age FROM users"},
+    {"sql": "SELECT * FROM orders WHERE user_id = 123", "partition_key": "123"}
+  ]
+}'
+```
+
+**Response:**
+```json
+{
+  "results": [
+    {"success": true, "columns": ["cnt"], "rows": [{"cnt": 1523}]},
+    {"success": true, "columns": ["avg_age"], "rows": [{"avg_age": 35.7}]},
+    {"success": true, "columns": ["id", "total"], "rows": [...]}
+  ],
+  "took_ms": 89
+}
+```
+
 ### GET /health
 
 ```json
 {"status": "healthy", "shard_count": 3}
+```
+
+### GET /admin/tables
+
+List all tables across the cluster:
+```json
+{"tables": ["users", "products", "orders"]}
+```
+
+### GET /admin/tables/{name}
+
+Get schema information for a specific table:
+```json
+{
+  "name": "users",
+  "columns": [
+    {"name": "id", "type": "INTEGER", "nullable": false},
+    {"name": "email", "type": "VARCHAR", "nullable": false},
+    {"name": "age", "type": "INTEGER", "nullable": true}
+  ]
+}
+```
+
+### GET /admin/stats
+
+Get detailed cluster statistics including per-shard metrics:
+```json
+{
+  "cluster": {
+    "total_shards": 3,
+    "total_tables": 4,
+    "total_rows": 1523000
+  },
+  "shards": [
+    {"id": 0, "path": "./data/shard_000.duckdb", "size_mb": 245, "table_count": 4, "row_count": 508000},
+    {"id": 1, "path": "./data/shard_001.duckdb", "size_mb": 238, "table_count": 4, "row_count": 502000},
+    {"id": 2, "path": "./data/shard_002.duckdb", "size_mb": 250, "table_count": 4, "row_count": 513000}
+  ]
+}
 ```
 
 ### GET /admin/shards

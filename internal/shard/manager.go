@@ -146,19 +146,33 @@ func (m *Manager) ExecuteOnAll(ctx context.Context, query string) error {
 }
 
 func (m *Manager) QueryAll(ctx context.Context, query string) ([][]map[string]any, error) {
+	resultSets, err := m.QueryAllWithSchema(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to old format for backwards compatibility
+	results := make([][]map[string]any, len(resultSets))
+	for i, rs := range resultSets {
+		results[i] = rs.Rows
+	}
+	return results, nil
+}
+
+func (m *Manager) QueryAllWithSchema(ctx context.Context, query string) ([]*QueryResultSet, error) {
 	m.mu.RLock()
 	shards := make([]*Shard, len(m.Shards))
 	copy(shards, m.Shards)
 	m.mu.RUnlock()
 
 	var wg sync.WaitGroup
-	results := make([][]map[string]any, len(shards))
+	results := make([]*QueryResultSet, len(shards))
 	errs := make([]error, len(shards))
 	for i, s := range shards {
 		wg.Add(1)
 		go func(idx int, sh *Shard) {
 			defer wg.Done()
-			results[idx], errs[idx] = sh.Query(ctx, query)
+			results[idx], errs[idx] = sh.QueryWithSchema(ctx, query)
 		}(i, s)
 	}
 	wg.Wait()
