@@ -3,3 +3,7 @@ data/
 *.duckdb
 *.duckdb.wal
 cluster.json
+
+# Compiled binaries
+duckdb-cluster
+/duckdb-cluster
