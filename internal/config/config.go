@@ -39,6 +39,9 @@ type Config struct {
 	
 	// Ring configuration
 	Ring RingConfig `yaml:"ring"`
+	
+	// Observability configuration
+	Observability ObservabilityConfig `yaml:"observability"`
 }
 
 // CommonConfig contains settings shared across components
@@ -155,6 +158,57 @@ type MemberlistConfig struct {
 	BindPort int `yaml:"bind_port"`
 }
 
+// ObservabilityConfig configures metrics, tracing, and logging
+type ObservabilityConfig struct {
+	// Metrics configuration
+	Metrics MetricsConfig `yaml:"metrics"`
+	
+	// Tracing configuration
+	Tracing TracingConfig `yaml:"tracing"`
+	
+	// Logging configuration
+	Logging LoggingConfig `yaml:"logging"`
+}
+
+// MetricsConfig configures Prometheus metrics
+type MetricsConfig struct {
+	// Enabled controls whether metrics are collected
+	Enabled bool `yaml:"enabled"`
+	
+	// Path is the HTTP endpoint path for metrics (e.g., "/metrics")
+	Path string `yaml:"path"`
+	
+	// Namespace is the metrics namespace prefix
+	Namespace string `yaml:"namespace"`
+}
+
+// TracingConfig configures distributed tracing
+type TracingConfig struct {
+	// Enabled controls whether tracing is enabled
+	Enabled bool `yaml:"enabled"`
+	
+	// OTLPEndpoint is the OTLP collector endpoint (e.g., "localhost:4317")
+	OTLPEndpoint string `yaml:"otlp_endpoint"`
+	
+	// ServiceName overrides the default service name
+	ServiceName string `yaml:"service_name"`
+	
+	// Environment identifies the deployment environment (e.g., "production")
+	Environment string `yaml:"environment"`
+	
+	// SampleRate is the sampling rate (0.0 to 1.0, 1.0 = trace everything)
+	SampleRate float64 `yaml:"sample_rate"`
+}
+
+// LoggingConfig configures structured logging
+type LoggingConfig struct {
+	// Level is the log level (debug, info, warn, error)
+	Level string `yaml:"level"`
+	
+	// Format is the log format (text or json)
+	Format string `yaml:"format"`
+}
+
 // Default returns a config with sensible defaults
 func Default() *Config {
 	return &Config{
@@ -204,6 +258,24 @@ func Default() *Config {
 				JoinPeers: []string{},
 				BindAddr:  "0.0.0.0",
 				BindPort:  7946,
+			},
+		},
+		Observability: ObservabilityConfig{
+			Metrics: MetricsConfig{
+				Enabled:   true,
+				Path:      "/metrics",
+				Namespace: "duckdb_cluster",
+			},
+			Tracing: TracingConfig{
+				Enabled:      false,
+				OTLPEndpoint: "localhost:4317",
+				ServiceName:  "duckdb-cluster",
+				Environment:  "development",
+				SampleRate:   1.0,
+			},
+			Logging: LoggingConfig{
+				Level:  "info",
+				Format: "text",
 			},
 		},
 	}

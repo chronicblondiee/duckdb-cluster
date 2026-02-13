@@ -9,7 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/brown/duckdb-cluster/internal/cluster"
+	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Server struct {
@@ -37,6 +38,10 @@ func NewServer(c *cluster.Cluster) *Server {
 	
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+	
+	// Metrics endpoint (Prometheus)
+	s.mux.Handle("GET /metrics", promhttp.Handler())
+	
 	return s
 }
 

@@ -8,15 +8,17 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
-	"github.com/brown/duckdb-cluster/internal/cluster"
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/distributor"
-	"github.com/brown/duckdb-cluster/internal/frontend"
-	"github.com/brown/duckdb-cluster/internal/ingester"
-	"github.com/brown/duckdb-cluster/internal/module"
-	"github.com/brown/duckdb-cluster/internal/modules"
-	"github.com/brown/duckdb-cluster/internal/querier"
+	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/distributor"
+	"github.com/chronicblondiee/duckdb-cluster/internal/frontend"
+	"github.com/chronicblondiee/duckdb-cluster/internal/ingester"
+	"github.com/chronicblondiee/duckdb-cluster/internal/module"
+	"github.com/chronicblondiee/duckdb-cluster/internal/modules"
+	"github.com/chronicblondiee/duckdb-cluster/internal/observability"
+	"github.com/chronicblondiee/duckdb-cluster/internal/querier"
 )
 
 func main() {
@@ -122,7 +124,43 @@ func cmdStart(args []string) {
 }
 
 func startCluster(cfg *config.Config) error {
-	slog.Info("starting duckdb-cluster", "target", cfg.Target, "data_dir", cfg.Common.DataDir)
+	// Initialize observability
+	logger := observability.NewLogger(
+		observability.ParseLevel(cfg.Observability.Logging.Level),
+		cfg.Observability.Logging.Format,
+	)
+	
+	logger.Info("starting duckdb-cluster", "target", cfg.Target, "data_dir", cfg.Common.DataDir)
+	
+	// Initialize metrics
+	metrics := observability.NewMetrics(cfg.Observability.Metrics.Namespace)
+	metrics.ShardCount.Set(float64(cfg.Common.NumShards))
+	metrics.ReplicationFactor.Set(float64(cfg.Distributor.ReplicationFactor))
+	
+	// Initialize tracing if enabled
+	if cfg.Observability.Tracing.Enabled {
+		tp, err := observability.NewTracerProvider(observability.TracingConfig{
+			Enabled:      cfg.Observability.Tracing.Enabled,
+			OTLPEndpoint: cfg.Observability.Tracing.OTLPEndpoint,
+			ServiceName:  cfg.Observability.Tracing.ServiceName,
+			Environment:  cfg.Observability.Tracing.Environment,
+			InstanceID:   cfg.Ring.InstanceID,
+			SampleRate:   cfg.Observability.Tracing.SampleRate,
+		}, logger.Logger)
+		if err != nil {
+			logger.Error("failed to initialize tracing", "error", err)
+		} else {
+			// Schedule tracer shutdown (will be called when process exits)
+			defer func() {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := tp.Shutdown(shutdownCtx); err != nil {
+					logger.Error("failed to shutdown tracer", "error", err)
+				}
+			}()
+			logger.Info("tracing initialized", "endpoint", cfg.Observability.Tracing.OTLPEndpoint)
+		}
+	}
 
 	// Create module manager
 	mgr := module.NewManager()
@@ -130,7 +168,7 @@ func startCluster(cfg *config.Config) error {
 	// Create components
 	ing := ingester.NewIngester(cfg)
 	quer := querier.NewQuerier(cfg)
-	dist := distributor.NewDistributor(cfg, ing)
+	dist := distributor.NewDistributor(cfg, ing, metrics, logger)
 	fe := frontend.NewQueryFrontend(cfg, quer)
 
 	// Create cluster facade for API compatibility

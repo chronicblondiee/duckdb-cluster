@@ -1,0 +1,34 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'duckdb-cluster'
+    environment: 'development'
+
+scrape_configs:
+  # DuckDB Cluster instances
+  - job_name: 'duckdb-cluster'
+    static_configs:
+      - targets:
+          - 'host.docker.internal:8080'  # Adjust to your cluster endpoint
+        labels:
+          instance: 'node-0'
+      
+      # Add more nodes if running distributed mode
+      # - targets:
+      #     - 'host.docker.internal:8081'
+      #   labels:
+      #     instance: 'node-1'
+      # - targets:
+      #     - 'host.docker.internal:8082'
+      #   labels:
+      #     instance: 'node-2'
+    
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

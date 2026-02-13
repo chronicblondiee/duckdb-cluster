@@ -5,21 +5,27 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
-	"github.com/brown/duckdb-cluster/internal/ring"
+	"github.com/chronicblondiee/duckdb-cluster/internal/observability"
+	"github.com/chronicblondiee/duckdb-cluster/internal/ring"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ReplicationCoordinator handles replication of writes to multiple ingesters
 type ReplicationCoordinator struct {
 	ring              *ring.Ring
 	replicationFactor int
+	metrics           *observability.Metrics
 }
 
 // NewReplicationCoordinator creates a new replication coordinator
-func NewReplicationCoordinator(r *ring.Ring, replicationFactor int) *ReplicationCoordinator {
+func NewReplicationCoordinator(r *ring.Ring, replicationFactor int, metrics *observability.Metrics) *ReplicationCoordinator {
 	return &ReplicationCoordinator{
 		ring:              r,
 		replicationFactor: replicationFactor,
+		metrics:           metrics,
 	}
 }
 
@@ -29,11 +35,22 @@ func (rc *ReplicationCoordinator) ReplicateWrite(
 	req *PushRequest,
 	pushFunc func(ctx context.Context, nodeID string, req *PushRequest) (*PushResponse, error),
 ) (*PushResponse, error) {
+	// Start tracing span
+	ctx, span := observability.StartSpan(ctx, "distributor", "ReplicateWrite",
+		trace.WithAttributes(
+			attribute.String("partition_key", req.PartitionKey),
+			attribute.Int("replication_factor", rc.replicationFactor),
+		))
+	defer span.End()
+	
 	// Get target nodes for replication
 	nodes, err := rc.getReplicationTargets(req.PartitionKey)
 	if err != nil {
+		observability.RecordError(ctx, err)
 		return nil, fmt.Errorf("get replication targets: %w", err)
 	}
+	
+	observability.AddSpanAttributes(ctx, attribute.Int("target_nodes", len(nodes)))
 	
 	slog.Debug("replicating write",
 		"partition_key", req.PartitionKey,
@@ -51,6 +68,7 @@ func (rc *ReplicationCoordinator) ReplicateWrite(
 		nodeID   string
 		response *PushResponse
 		err      error
+		duration time.Duration
 	}
 	
 	resultCh := make(chan result, len(nodes))
@@ -61,11 +79,15 @@ func (rc *ReplicationCoordinator) ReplicateWrite(
 		go func(n *ring.Node) {
 			defer wg.Done()
 			
+			start := time.Now()
 			resp, err := pushFunc(ctx, n.ID, req)
+			duration := time.Since(start)
+			
 			resultCh <- result{
 				nodeID:   n.ID,
 				response: resp,
 				err:      err,
+				duration: duration,
 			}
 		}(node)
 	}
@@ -85,13 +107,24 @@ func (rc *ReplicationCoordinator) ReplicateWrite(
 	)
 	
 	for res := range resultCh {
+		// Record replication latency
+		if rc.metrics != nil {
+			rc.metrics.ReplicationLatency.WithLabelValues(res.nodeID).Observe(res.duration.Seconds())
+		}
+		
 		if res.err != nil {
 			slog.Warn("replication failed",
 				"node_id", res.nodeID,
 				"error", res.err,
 			)
+			if rc.metrics != nil {
+				rc.metrics.ReplicationFailure.WithLabelValues(res.nodeID, "error").Inc()
+			}
 			lastError = res.err
 			errors = append(errors, res.err)
+			observability.AddSpanEvent(ctx, "replication_failed", 
+				attribute.String("node_id", res.nodeID),
+				attribute.String("error", res.err.Error()))
 			continue
 		}
 		
@@ -101,8 +134,14 @@ func (rc *ReplicationCoordinator) ReplicateWrite(
 				"node_id", res.nodeID,
 				"error", res.response.Error,
 			)
+			if rc.metrics != nil {
+				rc.metrics.ReplicationFailure.WithLabelValues(res.nodeID, "response_error").Inc()
+			}
 			lastError = err
 			errors = append(errors, err)
+			observability.AddSpanEvent(ctx, "replication_error", 
+				attribute.String("node_id", res.nodeID),
+				attribute.String("error", res.response.Error))
 			continue
 		}
 		
@@ -111,15 +150,27 @@ func (rc *ReplicationCoordinator) ReplicateWrite(
 			firstSuccess = res.response
 		}
 		
+		if rc.metrics != nil {
+			rc.metrics.ReplicationSuccess.WithLabelValues(res.nodeID).Inc()
+		}
+		
 		slog.Debug("replication succeeded",
 			"node_id", res.nodeID,
 			"rows_affected", res.response.RowsAffected,
 		)
+		observability.AddSpanEvent(ctx, "replication_succeeded", 
+			attribute.String("node_id", res.nodeID),
+			attribute.Int64("rows_affected", res.response.RowsAffected))
 	}
 	
 	// Determine if replication was successful
 	// We need at least a quorum (majority) of replicas to succeed
 	quorum := (rc.replicationFactor / 2) + 1
+	
+	observability.AddSpanAttributes(ctx,
+		attribute.Int("success_count", successCount),
+		attribute.Int("required_quorum", quorum),
+		attribute.Int("error_count", len(errors)))
 	
 	if successCount >= quorum {
 		slog.Debug("replication completed",
@@ -137,13 +188,14 @@ func (rc *ReplicationCoordinator) ReplicateWrite(
 		"errors", len(errors),
 	)
 	
+	replicationErr := fmt.Errorf("replication failed (%d/%d succeeded)", successCount, len(nodes))
 	if lastError != nil {
-		return nil, fmt.Errorf("replication failed (%d/%d succeeded): %w",
+		replicationErr = fmt.Errorf("replication failed (%d/%d succeeded): %w",
 			successCount, len(nodes), lastError)
 	}
 	
-	return nil, fmt.Errorf("replication failed (%d/%d succeeded)",
-		successCount, len(nodes))
+	observability.RecordError(ctx, replicationErr)
+	return nil, replicationErr
 }
 
 // getReplicationTargets returns N nodes for replication based on partition key

@@ -5,15 +5,30 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/distributor"
-	"github.com/brown/duckdb-cluster/internal/ingester"
-	"github.com/brown/duckdb-cluster/internal/querier"
-	"github.com/brown/duckdb-cluster/internal/ring"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/distributor"
+	"github.com/chronicblondiee/duckdb-cluster/internal/ingester"
+	"github.com/chronicblondiee/duckdb-cluster/internal/observability"
+	"github.com/chronicblondiee/duckdb-cluster/internal/querier"
+	"github.com/chronicblondiee/duckdb-cluster/internal/ring"
 )
+
+var (
+	testIntegrationMetrics     *observability.Metrics
+	testIntegrationMetricsOnce sync.Once
+)
+
+// getTestMetrics returns a singleton metrics instance for integration testing
+func getTestMetrics() *observability.Metrics {
+	testIntegrationMetricsOnce.Do(func() {
+		testIntegrationMetrics = observability.NewMetrics("test_integration")
+	})
+	return testIntegrationMetrics
+}
 
 // TestWriteReplication tests write replication across multiple ingesters
 func TestWriteReplication(t *testing.T) {
@@ -73,7 +88,8 @@ func TestWriteReplication(t *testing.T) {
 	}
 	
 	// Create replication coordinator
-	replicator := distributor.NewReplicationCoordinator(r, 3)
+	metrics := getTestMetrics()
+	replicator := distributor.NewReplicationCoordinator(r, 3, metrics)
 	
 	// Create push function that routes to the correct ingester
 	pushFunc := func(ctx context.Context, nodeID string, req *distributor.PushRequest) (*distributor.PushResponse, error) {
@@ -360,7 +376,8 @@ func TestReplicationPartialFailure(t *testing.T) {
 	}
 	
 	// Create replication coordinator
-	replicator := distributor.NewReplicationCoordinator(r, 3)
+	metrics := getTestMetrics()
+	replicator := distributor.NewReplicationCoordinator(r, 3, metrics)
 	
 	// Create push function where node-2 always fails
 	pushFunc := func(ctx context.Context, nodeID string, req *distributor.PushRequest) (*distributor.PushResponse, error) {

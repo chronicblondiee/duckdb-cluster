@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
-	"github.com/brown/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/observability"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // IngesterClient is the interface for pushing writes to ingesters
@@ -33,13 +37,17 @@ type Distributor struct {
 	ingester    IngesterClient
 	replicator  *ReplicationCoordinator
 	pushToNode  func(ctx context.Context, nodeID string, req *PushRequest) (*PushResponse, error)
+	metrics     *observability.Metrics
+	logger      *observability.Logger
 }
 
 // NewDistributor creates a new distributor
-func NewDistributor(cfg *config.Config, ingester IngesterClient) *Distributor {
+func NewDistributor(cfg *config.Config, ingester IngesterClient, metrics *observability.Metrics, logger *observability.Logger) *Distributor {
 	d := &Distributor{
 		cfg:      cfg,
 		ingester: ingester,
+		metrics:  metrics,
+		logger:   logger,
 	}
 	
 	// Set default push function (local ingester)
@@ -62,23 +70,64 @@ func (d *Distributor) SetPushFunc(pushFunc func(ctx context.Context, nodeID stri
 
 // Push validates and forwards a write request to the appropriate ingester(s)
 func (d *Distributor) Push(ctx context.Context, req *PushRequest) (*PushResponse, error) {
+	// Start tracing span
+	ctx, span := observability.StartSpan(ctx, "distributor", "Distributor.Push",
+		trace.WithAttributes(
+			attribute.String("partition_key", req.PartitionKey),
+			attribute.Int("sql_length", len(req.SQL)),
+		))
+	defer span.End()
+	
+	// Start timing for metrics
+	startTime := time.Now()
+	
 	// Validate request
 	if err := d.validateRequest(req); err != nil {
+		d.metrics.WriteErrors.WithLabelValues("push", "validation").Inc()
+		d.metrics.WriteTotal.WithLabelValues("push", "error").Inc()
+		observability.RecordError(ctx, err)
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 	
-	slog.Debug("distributor pushing write", "sql", req.SQL, "partition_key", req.PartitionKey)
+	if d.logger != nil {
+		d.logger.DebugContext(ctx, "distributor pushing write", 
+			"sql_length", len(req.SQL), 
+			"partition_key", req.PartitionKey)
+	} else {
+		slog.Debug("distributor pushing write", "sql", req.SQL, "partition_key", req.PartitionKey)
+	}
+	
+	var resp *PushResponse
+	var err error
 	
 	// If replication is enabled, use replication coordinator
 	if d.replicator != nil && d.cfg.Distributor.ReplicationFactor > 1 {
-		return d.replicator.ReplicateWrite(ctx, req, d.pushToNode)
+		observability.AddSpanAttributes(ctx, attribute.Bool("replicated", true))
+		resp, err = d.replicator.ReplicateWrite(ctx, req, d.pushToNode)
+	} else {
+		// Otherwise, forward to local ingester (single-node or no replication)
+		observability.AddSpanAttributes(ctx, attribute.Bool("replicated", false))
+		resp, err = d.ingester.Push(ctx, req)
+		if err != nil {
+			err = fmt.Errorf("ingester push failed: %w", err)
+		}
 	}
 	
-	// Otherwise, forward to local ingester (single-node or no replication)
-	resp, err := d.ingester.Push(ctx, req)
+	// Record metrics
+	duration := time.Since(startTime).Seconds()
+	d.metrics.WriteLatency.WithLabelValues("push", fmt.Sprintf("%d", resp.ShardID)).Observe(duration)
+	
 	if err != nil {
-		return nil, fmt.Errorf("ingester push failed: %w", err)
+		d.metrics.WriteErrors.WithLabelValues("push", "ingester").Inc()
+		d.metrics.WriteTotal.WithLabelValues("push", "error").Inc()
+		observability.RecordError(ctx, err)
+		return nil, err
 	}
+	
+	d.metrics.WriteTotal.WithLabelValues("push", "success").Inc()
+	observability.AddSpanAttributes(ctx, 
+		attribute.Int64("rows_affected", resp.RowsAffected),
+		attribute.Int("shard_id", resp.ShardID))
 	
 	return resp, nil
 }
