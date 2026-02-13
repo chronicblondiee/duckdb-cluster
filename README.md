@@ -293,6 +293,38 @@ make test     # Run all tests
 make clean    # Remove bin/ and data/
 ```
 
+## Go Client Library
+
+For Go applications, use the high-level client library with connection pooling, automatic retries, and efficient bulk indexing:
+
+```go
+import "github.com/brown/duckdb-cluster/pkg/client"
+
+// Create client
+c := client.New("http://localhost:8080")
+
+// Execute queries
+resp, err := c.Select(ctx, "SELECT * FROM users")
+resp, err := c.Insert(ctx, "INSERT INTO users VALUES (1, 'Alice')", "user-1")
+
+// Bulk inserts (10-100x faster)
+bi := c.NewBulkIndexer(client.BulkIndexerConfig{
+    FlushSize:     1000,
+    FlushInterval: 5 * time.Second,
+    Workers:       4,
+})
+defer bi.Close(ctx)
+
+for _, item := range items {
+    bi.Add(ctx, client.BulkItem{
+        SQL:          "INSERT INTO events VALUES (...)",
+        PartitionKey: item.Key,
+    })
+}
+```
+
+**See [`pkg/client/README.md`](pkg/client/README.md) for complete documentation and examples.**
+
 ## Dependencies
 
 - [duckdb-go/v2](https://github.com/duckdb/duckdb-go) — DuckDB driver for Go
@@ -322,8 +354,15 @@ make clean    # Remove bin/ and data/
 ✅ Consistent hash ring for future distributed mode  
 ✅ Multiple deployment targets (all, write, read, backend)  
 
-### Future: Phase 4 (Planned)
-- Go client library with high-level API
-- BulkIndexer for async batch inserts
-- Connection pooling and automatic retries
+### Phase 4: Go Client Library
+✅ High-level client API with functional options  
+✅ Connection pooling and automatic retries  
+✅ BulkIndexer for async batch inserts (10-100x faster)  
+✅ Full context.Context support  
+✅ Complete examples and documentation  
+
+### Future: Phase 5 (Planned)
 - gRPC transport for distributed multi-node deployments
+- Memberlist integration for cluster membership
+- Replication with configurable factor
+- Multi-node integration tests
