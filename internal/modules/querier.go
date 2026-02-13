@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/module"
-	"github.com/brown/duckdb-cluster/internal/querier"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/module"
+	"github.com/chronicblondiee/duckdb-cluster/internal/querier"
 )
 
 // QuerierModule wraps the querier component

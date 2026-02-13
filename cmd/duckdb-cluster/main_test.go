@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/brown/duckdb-cluster/internal/cluster"
-	"github.com/brown/duckdb-cluster/internal/router"
-	"github.com/brown/duckdb-cluster/internal/shard"
+	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
+	"github.com/chronicblondiee/duckdb-cluster/internal/router"
+	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 )
 
 func TestIntegration(t *testing.T) {

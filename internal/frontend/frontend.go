@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/querier"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/querier"
 )
 
 // QuerierClient is the interface for executing queries on queriers

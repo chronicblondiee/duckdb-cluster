@@ -42,6 +42,12 @@ type Config struct {
 	
 	// Observability configuration
 	Observability ObservabilityConfig `yaml:"observability"`
+	
+	// Security configuration
+	Security SecurityConfig `yaml:"security"`
+	
+	// Reliability configuration
+	Reliability ReliabilityConfig `yaml:"reliability"`
 }
 
 // CommonConfig contains settings shared across components
@@ -209,6 +215,144 @@ type LoggingConfig struct {
 	Format string `yaml:"format"`
 }
 
+// SecurityConfig configures security features
+type SecurityConfig struct {
+	// TLS configuration for gRPC
+	TLS TLSConfig `yaml:"tls"`
+	
+	// Authentication configuration
+	Authentication AuthenticationConfig `yaml:"authentication"`
+	
+	// RateLimit configuration
+	RateLimit RateLimitConfig `yaml:"rate_limit"`
+}
+
+// TLSConfig configures TLS/mTLS
+type TLSConfig struct {
+	// Enabled controls whether TLS is enabled
+	Enabled bool `yaml:"enabled"`
+	
+	// CertFile is the path to the TLS certificate
+	CertFile string `yaml:"cert_file"`
+	
+	// KeyFile is the path to the TLS private key
+	KeyFile string `yaml:"key_file"`
+	
+	// CAFile is the path to the CA certificate (for mTLS)
+	CAFile string `yaml:"ca_file"`
+	
+	// ClientAuth controls client authentication ("none", "require", "verify")
+	ClientAuth string `yaml:"client_auth"`
+	
+	// ServerName is the expected server name for certificate validation
+	ServerName string `yaml:"server_name"`
+}
+
+// AuthenticationConfig configures authentication
+type AuthenticationConfig struct {
+	// Enabled controls whether authentication is enforced
+	Enabled bool `yaml:"enabled"`
+	
+	// JWTSecret is the secret for signing JWT tokens
+	JWTSecret string `yaml:"jwt_secret"`
+	
+	// TokenExpiration is how long tokens are valid
+	TokenExpiration time.Duration `yaml:"token_expiration"`
+	
+	// AllowAnonymous allows unauthenticated requests
+	AllowAnonymous bool `yaml:"allow_anonymous"`
+}
+
+// RateLimitConfig configures rate limiting
+type RateLimitConfig struct {
+	// Enabled controls whether rate limiting is enforced
+	Enabled bool `yaml:"enabled"`
+	
+	// RequestsPerSecond is the max requests per second
+	RequestsPerSecond int `yaml:"requests_per_second"`
+	
+	// Burst is the maximum burst size
+	Burst int `yaml:"burst"`
+	
+	// PerTenant enables per-tenant rate limiting
+	PerTenant bool `yaml:"per_tenant"`
+	
+	// PerAPIKey enables per-API-key rate limiting
+	PerAPIKey bool `yaml:"per_api_key"`
+}
+
+// ReliabilityConfig configures reliability features
+type ReliabilityConfig struct {
+	// Timeouts configuration
+	Timeouts TimeoutConfig `yaml:"timeouts"`
+	
+	// Backpressure configuration
+	Backpressure BackpressureConfig `yaml:"backpressure"`
+	
+	// AdmissionControl configuration
+	AdmissionControl AdmissionControlConfig `yaml:"admission_control"`
+	
+	// Degradation configuration
+	Degradation DegradationConfig `yaml:"degradation"`
+}
+
+// TimeoutConfig configures operation timeouts
+type TimeoutConfig struct {
+	// QueryTimeout is the maximum time a query can run
+	QueryTimeout time.Duration `yaml:"query_timeout"`
+	
+	// WriteTimeout is the maximum time a write can take
+	WriteTimeout time.Duration `yaml:"write_timeout"`
+	
+	// ReplicationTimeout is the maximum time for replication
+	ReplicationTimeout time.Duration `yaml:"replication_timeout"`
+	
+	// HealthCheckTimeout is the timeout for health checks
+	HealthCheckTimeout time.Duration `yaml:"health_check_timeout"`
+}
+
+// BackpressureConfig configures backpressure
+type BackpressureConfig struct {
+	// Enabled controls whether backpressure is enabled
+	Enabled bool `yaml:"enabled"`
+	
+	// MaxConcurrentWrites is the maximum concurrent writes allowed
+	MaxConcurrentWrites int `yaml:"max_concurrent_writes"`
+	
+	// MaxConcurrentReads is the maximum concurrent reads allowed
+	MaxConcurrentReads int `yaml:"max_concurrent_reads"`
+	
+	// MaxQueueSize is the maximum size of the request queue
+	MaxQueueSize int `yaml:"max_queue_size"`
+	
+	// QueueTimeout is how long to wait in queue before rejecting
+	QueueTimeout time.Duration `yaml:"queue_timeout"`
+}
+
+// AdmissionControlConfig configures admission control
+type AdmissionControlConfig struct {
+	// Enabled controls whether admission control is enabled
+	Enabled bool `yaml:"enabled"`
+	
+	// MaxMemoryMB is the maximum memory usage in MB
+	MaxMemoryMB int64 `yaml:"max_memory_mb"`
+	
+	// MaxCPUPercent is the maximum CPU usage percentage
+	MaxCPUPercent float64 `yaml:"max_cpu_percent"`
+}
+
+// DegradationConfig configures graceful degradation
+type DegradationConfig struct {
+	// Enabled controls whether graceful degradation is enabled
+	Enabled bool `yaml:"enabled"`
+	
+	// AutoDegrade enables automatic degradation on errors
+	AutoDegrade bool `yaml:"auto_degrade"`
+	
+	// ErrorThreshold is the number of errors before degrading
+	ErrorThreshold int `yaml:"error_threshold"`
+}
+
 // Default returns a config with sensible defaults
 func Default() *Config {
 	return &Config{
@@ -276,6 +420,49 @@ func Default() *Config {
 			Logging: LoggingConfig{
 				Level:  "info",
 				Format: "text",
+			},
+		},
+		Security: SecurityConfig{
+			TLS: TLSConfig{
+				Enabled:    false,
+				ClientAuth: "none",
+			},
+			Authentication: AuthenticationConfig{
+				Enabled:         false,
+				TokenExpiration: 24 * time.Hour,
+				AllowAnonymous:  true,
+			},
+			RateLimit: RateLimitConfig{
+				Enabled:           false,
+				RequestsPerSecond: 100,
+				Burst:             200,
+				PerTenant:         true,
+				PerAPIKey:         false,
+			},
+		},
+		Reliability: ReliabilityConfig{
+			Timeouts: TimeoutConfig{
+				QueryTimeout:       60 * time.Second,
+				WriteTimeout:       30 * time.Second,
+				ReplicationTimeout: 10 * time.Second,
+				HealthCheckTimeout: 5 * time.Second,
+			},
+			Backpressure: BackpressureConfig{
+				Enabled:             true,
+				MaxConcurrentWrites: 100,
+				MaxConcurrentReads:  1000,
+				MaxQueueSize:        1000,
+				QueueTimeout:        10 * time.Second,
+			},
+			AdmissionControl: AdmissionControlConfig{
+				Enabled:       false,
+				MaxMemoryMB:   8192,
+				MaxCPUPercent: 90.0,
+			},
+			Degradation: DegradationConfig{
+				Enabled:        true,
+				AutoDegrade:    false,
+				ErrorThreshold: 10,
 			},
 		},
 	}

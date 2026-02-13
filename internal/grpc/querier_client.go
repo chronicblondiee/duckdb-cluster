@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/brown/duckdb-cluster/internal/querier"
-	pb "github.com/brown/duckdb-cluster/proto"
+	"github.com/chronicblondiee/duckdb-cluster/internal/querier"
+	pb "github.com/chronicblondiee/duckdb-cluster/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

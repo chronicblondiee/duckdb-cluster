@@ -51,7 +51,7 @@ duckdb-cluster/
 │       └── handlers.go             REST endpoint handlers
 ├── checkpoint/                     Agent checkpoint summaries
 ├── Makefile                        build, run, test, clean
-├── go.mod / go.sum                 Module: github.com/brown/duckdb-cluster
+├── go.mod / go.sum                 Module: github.com/chronicblondiee/duckdb-cluster
 └── README.md                       User-facing docs
 ```
 

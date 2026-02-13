@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/brown/duckdb-cluster/internal/router"
-	"github.com/brown/duckdb-cluster/internal/shard"
+	"github.com/chronicblondiee/duckdb-cluster/internal/router"
+	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 )
 
 type ClusterStatus struct {

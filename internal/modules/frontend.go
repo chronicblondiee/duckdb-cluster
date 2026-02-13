@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/frontend"
-	"github.com/brown/duckdb-cluster/internal/module"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/frontend"
+	"github.com/chronicblondiee/duckdb-cluster/internal/module"
 )
 
 // QueryFrontendModule wraps the query frontend component

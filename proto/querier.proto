@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package duckdb.cluster.v1;
 
-option go_package = "github.com/brown/duckdb-cluster/proto/duckdbv1";
+option go_package = "github.com/chronicblondiee/duckdb-cluster/proto/duckdbv1";
 
 import "proto/common.proto";
 

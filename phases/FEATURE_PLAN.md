@@ -543,7 +543,7 @@ import (
     "log"
     "time"
     
-    duckdb "github.com/brown/duckdb-cluster/pkg/duckdbcluster"
+    duckdb "github.com/chronicblondiee/duckdb-cluster/pkg/duckdbcluster"
 )
 
 func main() {

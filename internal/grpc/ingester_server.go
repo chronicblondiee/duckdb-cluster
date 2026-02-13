@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/brown/duckdb-cluster/internal/distributor"
-	"github.com/brown/duckdb-cluster/internal/ingester"
-	pb "github.com/brown/duckdb-cluster/proto"
+	"github.com/chronicblondiee/duckdb-cluster/internal/distributor"
+	"github.com/chronicblondiee/duckdb-cluster/internal/ingester"
+	pb "github.com/chronicblondiee/duckdb-cluster/proto"
 	"google.golang.org/grpc"
 )
 

@@ -2,16 +2,17 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/brown/duckdb-cluster/internal/api"
-	"github.com/brown/duckdb-cluster/internal/cluster"
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/module"
+	"github.com/chronicblondiee/duckdb-cluster/internal/api"
+	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/module"
 )
 
 // ServerModule wraps the HTTP/gRPC server
@@ -46,7 +47,11 @@ func (s *ServerModule) Dependencies() []string {
 
 func (s *ServerModule) Init(ctx context.Context) error {
 	slog.Info("initializing server module")
-	s.server = api.NewServer(s.cluster)
+	srv, err := api.NewServer(s.cluster, s.cfg)
+	if err != nil {
+		return fmt.Errorf("create server: %w", err)
+	}
+	s.server = srv
 	return nil
 }
 

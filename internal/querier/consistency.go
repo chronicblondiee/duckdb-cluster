@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/brown/duckdb-cluster/internal/ring"
+	"github.com/chronicblondiee/duckdb-cluster/internal/ring"
 )
 
 // ConsistencyLevel defines read consistency levels

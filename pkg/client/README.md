@@ -14,7 +14,7 @@ High-level Go client library for `duckdb-cluster` with connection pooling, autom
 ## Installation
 
 ```bash
-go get github.com/brown/duckdb-cluster/pkg/client
+go get github.com/chronicblondiee/duckdb-cluster/pkg/client
 ```
 
 ## Quick Start
@@ -27,7 +27,7 @@ import (
     "fmt"
     "log"
     
-    "github.com/brown/duckdb-cluster/pkg/client"
+    "github.com/chronicblondiee/duckdb-cluster/pkg/client"
 )
 
 func main() {

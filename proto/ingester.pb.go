@@ -164,7 +164,7 @@ const file_proto_ingester_proto_rawDesc = "" +
 	"\x05error\x18\x03 \x01(\tR\x05error2\xa9\x01\n" +
 	"\x0fIngesterService\x12G\n" +
 	"\x04Push\x12\x1e.duckdb.cluster.v1.PushRequest\x1a\x1f.duckdb.cluster.v1.PushResponse\x12M\n" +
-	"\x06Health\x12 .duckdb.cluster.v1.HealthRequest\x1a!.duckdb.cluster.v1.HealthResponseB0Z.github.com/brown/duckdb-cluster/proto/duckdbv1b\x06proto3"
+	"\x06Health\x12 .duckdb.cluster.v1.HealthRequest\x1a!.duckdb.cluster.v1.HealthResponseB:Z8github.com/chronicblondiee/duckdb-cluster/proto/duckdbv1b\x06proto3"
 
 var (
 	file_proto_ingester_proto_rawDescOnce sync.Once

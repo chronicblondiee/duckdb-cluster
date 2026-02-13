@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/distributor"
-	"github.com/brown/duckdb-cluster/internal/router"
-	"github.com/brown/duckdb-cluster/internal/shard"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/distributor"
+	"github.com/chronicblondiee/duckdb-cluster/internal/router"
+	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 )
 
 // Ingester owns shards and handles write requests

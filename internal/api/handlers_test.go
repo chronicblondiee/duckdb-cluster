@@ -8,17 +8,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/brown/duckdb-cluster/internal/cluster"
+	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
 )
 
 func setupServer(t *testing.T) *Server {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := &cluster.Config{
+	clusterCfg := &cluster.Config{
 		DataDir:   dir,
 		NumShards: 3,
 	}
-	c, err := cluster.NewCluster(cfg)
+	c, err := cluster.NewCluster(clusterCfg)
 	if err != nil {
 		t.Fatalf("NewCluster: %v", err)
 	}
@@ -37,30 +38,50 @@ func setupServer(t *testing.T) *Server {
 		}
 	}
 	t.Cleanup(func() { c.Shutdown() })
-	return NewServer(c)
+	
+	// Create config with security disabled for tests
+	cfg := config.Default()
+	cfg.Security.Authentication.Enabled = false
+	cfg.Security.RateLimit.Enabled = false
+	
+	srv, err := NewServer(c, cfg)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	return srv
 }
 
 func setupServerWithInit(t *testing.T) *Server {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := &cluster.Config{
+	clusterCfg := &cluster.Config{
 		DataDir:   dir,
 		NumShards: 3,
 	}
 
 	// Init to create shard files
-	c, _ := cluster.NewCluster(cfg)
+	c, _ := cluster.NewCluster(clusterCfg)
 	if err := c.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 
 	// Start fresh cluster
-	c2, _ := cluster.NewCluster(cfg)
+	c2, _ := cluster.NewCluster(clusterCfg)
 	if err := c2.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	t.Cleanup(func() { c2.Shutdown() })
-	return NewServer(c2)
+	
+	// Create config with security disabled for tests
+	cfg := config.Default()
+	cfg.Security.Authentication.Enabled = false
+	cfg.Security.RateLimit.Enabled = false
+	
+	srv, err := NewServer(c2, cfg)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	return srv
 }
 
 func TestHealthEndpoint(t *testing.T) {

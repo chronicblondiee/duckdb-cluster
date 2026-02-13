@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/brown/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
 	"github.com/hashicorp/memberlist"
 )
 

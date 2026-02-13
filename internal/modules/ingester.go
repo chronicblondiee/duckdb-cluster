@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/ingester"
-	"github.com/brown/duckdb-cluster/internal/module"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/ingester"
+	"github.com/chronicblondiee/duckdb-cluster/internal/module"
 )
 
 // IngesterModule wraps the ingester component

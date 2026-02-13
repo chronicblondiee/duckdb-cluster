@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/brown/duckdb-cluster/internal/config"
-	"github.com/brown/duckdb-cluster/internal/distributor"
-	"github.com/brown/duckdb-cluster/internal/module"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/distributor"
+	"github.com/chronicblondiee/duckdb-cluster/internal/module"
 )
 
 // DistributorModule wraps the distributor component

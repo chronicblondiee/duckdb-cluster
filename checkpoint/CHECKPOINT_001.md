@@ -31,7 +31,7 @@ A working distributed clustering layer for DuckDB in Go. The system shards data 
 |---|---|
 | `cmd/duckdb-cluster/main.go` | CLI with `init`, `start`, `status` subcommands using `flag` package. |
 | `Makefile` | Targets: `build`, `run`, `test`, `clean`. |
-| `go.mod` / `go.sum` | Module: `github.com/brown/duckdb-cluster`. Only external dep: `duckdb-go/v2`. |
+| `go.mod` / `go.sum` | Module: `github.com/chronicblondiee/duckdb-cluster`. Only external dep: `duckdb-go/v2`. |
 
 ### Tests (11 total, all passing)
 

@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/brown/duckdb-cluster/pkg/client"
+	"github.com/chronicblondiee/duckdb-cluster/pkg/client"
 )
 
 func main() {

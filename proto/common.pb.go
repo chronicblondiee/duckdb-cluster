@@ -132,7 +132,7 @@ const file_proto_common_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vshard_count\x18\x02 \x01(\x05R\n" +
 	"shardCount\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05errorB0Z.github.com/brown/duckdb-cluster/proto/duckdbv1b\x06proto3"
+	"\x05error\x18\x03 \x01(\tR\x05errorB:Z8github.com/chronicblondiee/duckdb-cluster/proto/duckdbv1b\x06proto3"
 
 var (
 	file_proto_common_proto_rawDescOnce sync.Once

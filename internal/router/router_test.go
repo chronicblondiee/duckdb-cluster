@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/brown/duckdb-cluster/internal/shard"
+	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 )
 
 func setupRouter(t *testing.T) *Router {

@@ -298,7 +298,7 @@ make clean    # Remove bin/ and data/
 For Go applications, use the high-level client library with connection pooling, automatic retries, and efficient bulk indexing:
 
 ```go
-import "github.com/brown/duckdb-cluster/pkg/client"
+import "github.com/chronicblondiee/duckdb-cluster/pkg/client"
 
 // Create client
 c := client.New("http://localhost:8080")

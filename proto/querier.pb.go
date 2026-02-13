@@ -206,7 +206,7 @@ const file_proto_querier_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xab\x01\n" +
 	"\x0eQuerierService\x12J\n" +
 	"\x05Query\x12\x1f.duckdb.cluster.v1.QueryRequest\x1a .duckdb.cluster.v1.QueryResponse\x12M\n" +
-	"\x06Health\x12 .duckdb.cluster.v1.HealthRequest\x1a!.duckdb.cluster.v1.HealthResponseB0Z.github.com/brown/duckdb-cluster/proto/duckdbv1b\x06proto3"
+	"\x06Health\x12 .duckdb.cluster.v1.HealthRequest\x1a!.duckdb.cluster.v1.HealthResponseB:Z8github.com/chronicblondiee/duckdb-cluster/proto/duckdbv1b\x06proto3"
 
 var (
 	file_proto_querier_proto_rawDescOnce sync.Once

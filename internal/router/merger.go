@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/brown/duckdb-cluster/internal/shard"
+	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )

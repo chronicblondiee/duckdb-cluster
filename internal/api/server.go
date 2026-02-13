@@ -10,19 +10,49 @@ import (
 	"time"
 
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/security"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Server struct {
-	Cluster *cluster.Cluster
-	mux     *http.ServeMux
+	Cluster       *cluster.Cluster
+	mux           *http.ServeMux
+	authenticator *security.Authenticator
+	authorizer    *security.Authorizer
+	rateLimiter   *security.RateLimiter
 }
 
-func NewServer(c *cluster.Cluster) *Server {
-	s := &Server{
-		Cluster: c,
-		mux:     http.NewServeMux(),
+func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
+	// Initialize security components
+	authenticator, err := security.NewAuthenticator(security.AuthConfig{
+		Enabled:         cfg.Security.Authentication.Enabled,
+		JWTSecret:       cfg.Security.Authentication.JWTSecret,
+		TokenExpiration: cfg.Security.Authentication.TokenExpiration,
+		AllowAnonymous:  cfg.Security.Authentication.AllowAnonymous,
+	})
+	if err != nil {
+		return nil, err
 	}
+	
+	authorizer := security.NewAuthorizer()
+	
+	rateLimiter := security.NewRateLimiter(security.RateLimitConfig{
+		Enabled:           cfg.Security.RateLimit.Enabled,
+		RequestsPerSecond: cfg.Security.RateLimit.RequestsPerSecond,
+		Burst:             cfg.Security.RateLimit.Burst,
+		PerTenant:         cfg.Security.RateLimit.PerTenant,
+		PerAPIKey:         cfg.Security.RateLimit.PerAPIKey,
+	})
+	
+	s := &Server{
+		Cluster:       c,
+		mux:           http.NewServeMux(),
+		authenticator: authenticator,
+		authorizer:    authorizer,
+		rateLimiter:   rateLimiter,
+	}
+	
 	// Query endpoints
 	s.mux.HandleFunc("POST /query", s.handleQuery)
 	s.mux.HandleFunc("POST /bulk", s.handleBulk)
@@ -36,18 +66,30 @@ func NewServer(c *cluster.Cluster) *Server {
 	s.mux.HandleFunc("GET /admin/tables/{name}", s.handleTableSchema)
 	s.mux.HandleFunc("GET /admin/stats", s.handleStats)
 	
+	// Security endpoints (for API key management)
+	s.mux.HandleFunc("POST /admin/auth/token", s.handleGenerateToken)
+	s.mux.HandleFunc("POST /admin/auth/apikey", s.handleRegisterAPIKey)
+	s.mux.HandleFunc("DELETE /admin/auth/apikey", s.handleRevokeAPIKey)
+	
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	
 	// Metrics endpoint (Prometheus)
 	s.mux.Handle("GET /metrics", promhttp.Handler())
 	
-	return s
+	return s, nil
 }
 
-// Handler returns the HTTP handler
+// Handler returns the HTTP handler with security middleware
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	// Chain middleware: rate limit -> auth -> authz -> handlers
+	handler := security.ChainHTTPMiddleware(
+		security.HTTPRateLimitMiddleware(s.rateLimiter),
+		security.HTTPAuthMiddleware(s.authenticator),
+		security.HTTPAuthzMiddleware(s.authorizer),
+	)(s.mux)
+	
+	return handler
 }
 
 func (s *Server) Start(addr string) error {

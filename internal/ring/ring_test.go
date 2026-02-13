@@ -3,7 +3,7 @@ package ring
 import (
 	"testing"
 
-	"github.com/brown/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/config"
 )
 
 func TestRingSingleNode(t *testing.T) {
