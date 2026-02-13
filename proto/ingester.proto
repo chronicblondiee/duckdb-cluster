@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package duckdb.cluster.v1;
+
+option go_package = "github.com/brown/duckdb-cluster/proto/duckdbv1";
+
+import "proto/common.proto";
+
+// Ingester service handles write requests
+service IngesterService {
+  // Push handles a write request
+  rpc Push(PushRequest) returns (PushResponse);
+  
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// PushRequest represents a write request
+message PushRequest {
+  // SQL statement to execute
+  string sql = 1;
+  
+  // Partition key for routing
+  string partition_key = 2;
+  
+  // Optional tenant ID for multi-tenancy
+  string tenant_id = 3;
+}
+
+// PushResponse represents the result of a write
+message PushResponse {
+  // Number of rows affected
+  int64 rows_affected = 1;
+  
+  // Shard ID that handled the write
+  int32 shard_id = 2;
+  
+  // Error message if write failed (empty on success)
+  string error = 3;
+}

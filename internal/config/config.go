@@ -78,6 +78,9 @@ type DistributorConfig struct {
 	
 	// UseLocalIngester if true, calls ingester directly without gRPC
 	UseLocalIngester bool `yaml:"use_local_ingester"`
+	
+	// ReplicationFactor is the number of replicas for each write (1 = no replication)
+	ReplicationFactor int `yaml:"replication_factor"`
 }
 
 // IngesterConfig configures the ingester component
@@ -99,6 +102,9 @@ type QuerierConfig struct {
 	
 	// QueryTimeout is the maximum time a query can run
 	QueryTimeout time.Duration `yaml:"query_timeout"`
+	
+	// ReadConsistency determines read consistency level ("one", "quorum", "all")
+	ReadConsistency string `yaml:"read_consistency"`
 }
 
 // QueryFrontendConfig configures the query frontend component
@@ -166,8 +172,9 @@ func Default() *Config {
 			WriteTimeout:    30 * time.Second,
 		},
 		Distributor: DistributorConfig{
-			MaxQueryLength:   1048576, // 1MB
-			UseLocalIngester: true,
+			MaxQueryLength:    1048576, // 1MB
+			UseLocalIngester:  true,
+			ReplicationFactor: 1, // No replication by default
 		},
 		Ingester: IngesterConfig{
 			MaxShardsPerInstance: 10,
@@ -177,6 +184,7 @@ func Default() *Config {
 			MergeStrategy:        "duckdb",
 			MaxConcurrentQueries: 100,
 			QueryTimeout:         60 * time.Second,
+			ReadConsistency:      "one", // Read from one replica by default
 		},
 		QueryFrontend: QueryFrontendConfig{
 			QueryTimeout: 60 * time.Second,
@@ -277,12 +285,27 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("shutdown_timeout cannot be negative")
 	}
 	
+	// Validate distributor config
+	if c.Distributor.ReplicationFactor < 1 {
+		return fmt.Errorf("replication_factor must be at least 1")
+	}
+	if c.Distributor.ReplicationFactor > 10 {
+		return fmt.Errorf("replication_factor too large: %d (max 10)", c.Distributor.ReplicationFactor)
+	}
+	
 	// Validate querier config
 	if c.Querier.MergeStrategy != "duckdb" && c.Querier.MergeStrategy != "simple" {
 		return fmt.Errorf("invalid merge_strategy: %s (must be 'duckdb' or 'simple')", c.Querier.MergeStrategy)
 	}
 	if c.Querier.MaxConcurrentQueries < 1 {
 		return fmt.Errorf("max_concurrent_queries must be at least 1")
+	}
+	
+	validConsistency := map[string]bool{
+		"one": true, "quorum": true, "all": true,
+	}
+	if !validConsistency[c.Querier.ReadConsistency] {
+		return fmt.Errorf("invalid read_consistency: %s (must be: one, quorum, all)", c.Querier.ReadConsistency)
 	}
 	
 	// Validate ingester config

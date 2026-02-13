@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package duckdb.cluster.v1;
+
+option go_package = "github.com/brown/duckdb-cluster/proto/duckdbv1";
+
+import "proto/common.proto";
+
+// Querier service handles read queries
+service QuerierService {
+  // Query executes a read query
+  rpc Query(QueryRequest) returns (QueryResponse);
+  
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// QueryRequest represents a query to execute
+message QueryRequest {
+  // SQL query to execute
+  string sql = 1;
+  
+  // Optional: specific shard IDs to query (empty = all shards)
+  repeated int32 shard_ids = 2;
+}
+
+// QueryResponse represents query results
+message QueryResponse {
+  // Column names
+  repeated string columns = 1;
+  
+  // Rows as JSON-encoded values
+  repeated Row rows = 2;
+  
+  // Error message if query failed (empty on success)
+  string error = 3;
+}
+
+// Row represents a single row of data
+message Row {
+  // Column values as JSON strings
+  // (we use JSON encoding to handle DuckDB's flexible type system)
+  map<string, string> values = 1;
+}

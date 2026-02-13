@@ -25,16 +25,35 @@ type QueryResponse struct {
 
 // Querier executes read queries against shards
 type Querier struct {
-	cfg     *config.Config
-	manager *shard.Manager
-	router  *router.Router
+	cfg         *config.Config
+	manager     *shard.Manager
+	router      *router.Router
+	consistency *ConsistencyCoordinator
+	queryNode   func(ctx context.Context, nodeID string, req *QueryRequest) (*QueryResponse, error)
 }
 
 // NewQuerier creates a new querier
 func NewQuerier(cfg *config.Config) *Querier {
-	return &Querier{
+	q := &Querier{
 		cfg: cfg,
 	}
+	
+	// Set default query function (local query)
+	q.queryNode = func(ctx context.Context, nodeID string, req *QueryRequest) (*QueryResponse, error) {
+		return q.queryLocal(ctx, req)
+	}
+	
+	return q
+}
+
+// SetConsistency sets the consistency coordinator for distributed reads
+func (q *Querier) SetConsistency(consistency *ConsistencyCoordinator) {
+	q.consistency = consistency
+}
+
+// SetQueryFunc sets the function used to query specific nodes (for distributed mode)
+func (q *Querier) SetQueryFunc(queryFunc func(ctx context.Context, nodeID string, req *QueryRequest) (*QueryResponse, error)) {
+	q.queryNode = queryFunc
 }
 
 // Init initializes the querier (opens shard files in read mode)
@@ -62,6 +81,17 @@ func (q *Querier) Query(ctx context.Context, req *QueryRequest) (*QueryResponse,
 	
 	slog.Debug("querier executing query", "sql", req.SQL, "shard_ids", req.ShardIDs)
 	
+	// If consistency coordinator is set, use consistent reads
+	if q.consistency != nil {
+		return q.consistency.ConsistentQuery(ctx, req, q.queryNode)
+	}
+	
+	// Otherwise, query locally
+	return q.queryLocal(ctx, req)
+}
+
+// queryLocal executes a query on the local querier
+func (q *Querier) queryLocal(ctx context.Context, req *QueryRequest) (*QueryResponse, error) {
 	// If specific shards are requested, query only those
 	// Otherwise, let the router decide (which will fan-out to all for reads)
 	result, err := q.router.Route(ctx, req.SQL, "")
