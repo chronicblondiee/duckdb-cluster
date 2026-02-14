@@ -96,6 +96,12 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for multi-index query
+	if req.Index != "" && isMultiIndexSpec(req.Index) {
+		s.handleCrossIndexQuery(w, r, req)
+		return
+	}
+
 	// Resolve target index
 	idx, err := s.resolveIndex(req.Index)
 	if err != nil {

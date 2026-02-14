@@ -45,6 +45,12 @@ func main() {
 		cmdBackup(os.Args[2:])
 	case "rebalance":
 		cmdRebalance(os.Args[2:])
+	case "index":
+		cmdIndex(os.Args[2:])
+	case "alias":
+		cmdAlias(os.Args[2:])
+	case "template":
+		cmdTemplate(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -63,6 +69,9 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  migrate   Manage schema migrations (status, run)")
 	fmt.Fprintln(os.Stderr, "  backup    Manage backups (list, create, restore, delete)")
 	fmt.Fprintln(os.Stderr, "  rebalance Rebalance data across shards (plan, run, status)")
+	fmt.Fprintln(os.Stderr, "  index     Manage indices (list, create, delete, get, close, open)")
+	fmt.Fprintln(os.Stderr, "  alias     Manage index aliases (list, create, delete, get)")
+	fmt.Fprintln(os.Stderr, "  template  Manage index templates (list, create, delete, get)")
 }
 
 func cmdInit(args []string) {

@@ -390,11 +390,95 @@ func (s *Server) handleDeleteSchema(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveIndex resolves an index by name, defaulting to _default.
+// If the name matches an alias with a single index, resolves to that index.
 func (s *Server) resolveIndex(name string) (*index.Index, error) {
 	if name == "" {
 		name = "_default"
 	}
+
+	// Check alias first
+	if s.aliasManager != nil {
+		if indices := s.aliasManager.Resolve(name); len(indices) == 1 {
+			name = indices[0]
+		}
+	}
+
 	return s.registry.Get(name)
+}
+
+// resolveMultipleIndices resolves a comma-separated or wildcard index spec to multiple indices.
+func (s *Server) resolveMultipleIndices(spec string) ([]*index.Index, error) {
+	// Expand aliases
+	if s.aliasManager != nil {
+		if indices := s.aliasManager.Resolve(spec); len(indices) > 0 {
+			var result []*index.Index
+			for _, name := range indices {
+				idx, err := s.registry.Get(name)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, idx)
+			}
+			return result, nil
+		}
+	}
+
+	// Split comma-separated names
+	parts := strings.Split(spec, ",")
+	seen := make(map[string]bool)
+	var result []*index.Index
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		if strings.Contains(part, "*") {
+			// Wildcard expansion
+			for _, meta := range s.registry.List() {
+				if index.MatchGlob(part, meta.Name) && !seen[meta.Name] {
+					idx, err := s.registry.Get(meta.Name)
+					if err != nil {
+						continue // skip closed indices
+					}
+					seen[meta.Name] = true
+					result = append(result, idx)
+				}
+			}
+		} else {
+			// Check if this part is an alias
+			if s.aliasManager != nil {
+				if aliasIndices := s.aliasManager.Resolve(part); len(aliasIndices) > 0 {
+					for _, name := range aliasIndices {
+						if !seen[name] {
+							idx, err := s.registry.Get(name)
+							if err != nil {
+								return nil, err
+							}
+							seen[name] = true
+							result = append(result, idx)
+						}
+					}
+					continue
+				}
+			}
+
+			if !seen[part] {
+				idx, err := s.registry.Get(part)
+				if err != nil {
+					return nil, err
+				}
+				seen[part] = true
+				result = append(result, idx)
+			}
+		}
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no indices matched %q", spec)
+	}
+	return result, nil
 }
 
 // resolveRouter resolves the router for a given index name.

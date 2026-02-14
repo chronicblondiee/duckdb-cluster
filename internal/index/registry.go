@@ -19,9 +19,10 @@ type catalog struct {
 
 // Registry manages all indices in the cluster.
 type Registry struct {
-	mu      sync.RWMutex
-	indices map[string]*Index
-	baseDir string // root data dir (e.g., ./data)
+	mu              sync.RWMutex
+	indices         map[string]*Index
+	baseDir         string // root data dir (e.g., ./data)
+	templateManager *TemplateManager
 }
 
 // NewRegistry creates a new empty registry.
@@ -32,11 +33,31 @@ func NewRegistry(baseDir string) *Registry {
 	}
 }
 
+// SetTemplateManager sets the template manager for auto-applying templates on index creation.
+func (r *Registry) SetTemplateManager(tm *TemplateManager) {
+	r.templateManager = tm
+}
+
 // Create creates a new index with the given name and settings.
 func (r *Registry) Create(name string, settings Settings) (*Index, error) {
 	if err := validateNameInternal(name); err != nil {
 		return nil, err
 	}
+
+	// Apply matching template defaults before validation
+	if r.templateManager != nil {
+		matched := r.templateManager.Match(name)
+		if len(matched) > 0 {
+			tmpl := matched[0] // highest priority
+			if settings.ShardCount == 0 {
+				settings.ShardCount = tmpl.Settings.ShardCount
+			}
+			if settings.PartitionKeyField == "" {
+				settings.PartitionKeyField = tmpl.Settings.PartitionKeyField
+			}
+		}
+	}
+
 	if err := ValidateShardCount(settings.ShardCount); err != nil {
 		return nil, err
 	}

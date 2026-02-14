@@ -30,6 +30,8 @@ type Server struct {
 	rebalancer       *rebalance.Rebalancer
 	registry         *index.Registry
 	schemaRegistry   *index.SchemaRegistry
+	aliasManager     *index.AliasManager
+	templateManager  *index.TemplateManager
 }
 
 func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
@@ -71,16 +73,26 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	schemaReg = index.NewSchemaRegistry(cfg.Common.DataDir)
 	schemaReg.LoadAll()
 
+	// Initialize alias and template managers
+	aliasManager := index.NewAliasManager(cfg.Common.DataDir)
+	aliasManager.LoadAll()
+
+	templateManager := index.NewTemplateManager(cfg.Common.DataDir)
+	templateManager.LoadAll()
+	reg.SetTemplateManager(templateManager)
+
 	s := &Server{
-		Cluster:        c,
-		mux:            http.NewServeMux(),
-		authenticator:  authenticator,
-		authorizer:     authorizer,
-		rateLimiter:    rateLimiter,
-		backupManager:  backupManager,
-		rebalancer:     rebalance.NewRebalancer(c.Manager, slog.Default()),
-		registry:       reg,
-		schemaRegistry: schemaReg,
+		Cluster:         c,
+		mux:             http.NewServeMux(),
+		authenticator:   authenticator,
+		authorizer:      authorizer,
+		rateLimiter:     rateLimiter,
+		backupManager:   backupManager,
+		rebalancer:      rebalance.NewRebalancer(c.Manager, slog.Default()),
+		registry:        reg,
+		schemaRegistry:  schemaReg,
+		aliasManager:    aliasManager,
+		templateManager: templateManager,
 	}
 
 	// Query endpoints
@@ -137,6 +149,18 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	s.mux.HandleFunc("PUT /indices/{name}/_schema", s.handlePutSchema)
 	s.mux.HandleFunc("GET /indices/{name}/_schema", s.handleGetSchema)
 	s.mux.HandleFunc("DELETE /indices/{name}/_schema", s.handleDeleteSchema)
+
+	// Alias endpoints
+	s.mux.HandleFunc("PUT /aliases/{name}", s.handleCreateAlias)
+	s.mux.HandleFunc("GET /aliases/{name}", s.handleGetAlias)
+	s.mux.HandleFunc("DELETE /aliases/{name}", s.handleDeleteAlias)
+	s.mux.HandleFunc("GET /aliases", s.handleListAliases)
+
+	// Template endpoints
+	s.mux.HandleFunc("PUT /templates/{name}", s.handleCreateTemplate)
+	s.mux.HandleFunc("GET /templates/{name}", s.handleGetTemplate)
+	s.mux.HandleFunc("DELETE /templates/{name}", s.handleDeleteTemplate)
+	s.mux.HandleFunc("GET /templates", s.handleListTemplates)
 
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)
