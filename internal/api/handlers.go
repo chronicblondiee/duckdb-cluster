@@ -17,6 +17,7 @@ import (
 type queryRequest struct {
 	SQL          string `json:"sql"`
 	PartitionKey string `json:"partition_key"`
+	Index        string `json:"index,omitempty"` // target index (defaults to _default)
 	Offset       int    `json:"offset,omitempty"`
 	Limit        int    `json:"limit,omitempty"`
 }
@@ -34,6 +35,7 @@ type queryResponse struct {
 type bulkStatement struct {
 	SQL          string `json:"sql"`
 	PartitionKey string `json:"partition_key"`
+	Index        string `json:"index,omitempty"` // target index (defaults to _default)
 }
 
 type bulkRequest struct {
@@ -94,7 +96,14 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.Cluster.Router.Route(r.Context(), req.SQL, req.PartitionKey)
+	// Resolve target index
+	idx, err := s.resolveIndex(req.Index)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, queryResponse{Error: err.Error()})
+		return
+	}
+
+	result, err := idx.Router.Route(r.Context(), req.SQL, req.PartitionKey)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, queryResponse{Error: err.Error()})
 		return

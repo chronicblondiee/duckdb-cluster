@@ -12,6 +12,7 @@ import (
 	"github.com/chronicblondiee/duckdb-cluster/internal/backup"
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
 	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/index"
 	"github.com/chronicblondiee/duckdb-cluster/internal/migration"
 	"github.com/chronicblondiee/duckdb-cluster/internal/rebalance"
 	"github.com/chronicblondiee/duckdb-cluster/internal/security"
@@ -19,14 +20,16 @@ import (
 )
 
 type Server struct {
-	Cluster       *cluster.Cluster
-	mux           *http.ServeMux
-	authenticator *security.Authenticator
-	authorizer    *security.Authorizer
+	Cluster          *cluster.Cluster
+	mux              *http.ServeMux
+	authenticator    *security.Authenticator
+	authorizer       *security.Authorizer
 	rateLimiter      *security.RateLimiter
 	backupManager    *backup.BackupManager
 	migrationManager *migration.Manager
 	rebalancer       *rebalance.Rebalancer
+	registry         *index.Registry
+	schemaRegistry   *index.SchemaRegistry
 }
 
 func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
@@ -40,9 +43,9 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	authorizer := security.NewAuthorizer()
-	
+
 	rateLimiter := security.NewRateLimiter(security.RateLimitConfig{
 		Enabled:           cfg.Security.RateLimit.Enabled,
 		RequestsPerSecond: cfg.Security.RateLimit.RequestsPerSecond,
@@ -50,47 +53,60 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 		PerTenant:         cfg.Security.RateLimit.PerTenant,
 		PerAPIKey:         cfg.Security.RateLimit.PerAPIKey,
 	})
-	
+
 	// Initialize backup manager
 	backupManager, err := backup.NewBackupManager(cfg)
 	if err != nil {
 		return nil, err
 	}
-	
-	s := &Server{
-		Cluster:       c,
-		mux:           http.NewServeMux(),
-		authenticator: authenticator,
-		authorizer:    authorizer,
-		rateLimiter:   rateLimiter,
-		backupManager: backupManager,
-		rebalancer:    rebalance.NewRebalancer(c.Manager, slog.Default()),
+
+	// Initialize index registry and schema registry
+	var reg *index.Registry
+	var schemaReg *index.SchemaRegistry
+	if c.Registry != nil {
+		reg = c.Registry
+	} else {
+		reg = index.NewRegistry(cfg.Common.DataDir)
 	}
-	
+	schemaReg = index.NewSchemaRegistry(cfg.Common.DataDir)
+	schemaReg.LoadAll()
+
+	s := &Server{
+		Cluster:        c,
+		mux:            http.NewServeMux(),
+		authenticator:  authenticator,
+		authorizer:     authorizer,
+		rateLimiter:    rateLimiter,
+		backupManager:  backupManager,
+		rebalancer:     rebalance.NewRebalancer(c.Manager, slog.Default()),
+		registry:       reg,
+		schemaRegistry: schemaReg,
+	}
+
 	// Query endpoints
 	s.mux.HandleFunc("POST /query", s.handleQuery)
 	s.mux.HandleFunc("POST /bulk", s.handleBulk)
 	s.mux.HandleFunc("POST /multi-query", s.handleMultiQuery)
-	
-	// Admin endpoints
+
+	// Admin endpoints (backward compat — operate on _default)
 	s.mux.HandleFunc("GET /admin/shards", s.handleListShards)
 	s.mux.HandleFunc("POST /admin/shards", s.handleAddShard)
 	s.mux.HandleFunc("DELETE /admin/shards/{id}", s.handleRemoveShard)
 	s.mux.HandleFunc("GET /admin/tables", s.handleListTables)
 	s.mux.HandleFunc("GET /admin/tables/{name}", s.handleTableSchema)
 	s.mux.HandleFunc("GET /admin/stats", s.handleStats)
-	
-	// Security endpoints (for API key management)
+
+	// Security endpoints
 	s.mux.HandleFunc("POST /admin/auth/token", s.handleGenerateToken)
 	s.mux.HandleFunc("POST /admin/auth/apikey", s.handleRegisterAPIKey)
 	s.mux.HandleFunc("DELETE /admin/auth/apikey", s.handleRevokeAPIKey)
-	
+
 	// Backup endpoints
 	s.mux.HandleFunc("POST /admin/backups", s.handleCreateBackup)
 	s.mux.HandleFunc("GET /admin/backups", s.handleListBackups)
-	s.mux.HandleFunc("POST /admin/backups/", s.handleRestoreBackup) // Handles /admin/backups/{id}/restore
-	s.mux.HandleFunc("DELETE /admin/backups/", s.handleDeleteBackup) // Handles /admin/backups/{id}
-	
+	s.mux.HandleFunc("POST /admin/backups/", s.handleRestoreBackup)
+	s.mux.HandleFunc("DELETE /admin/backups/", s.handleDeleteBackup)
+
 	// Migration endpoints
 	s.mux.HandleFunc("GET /admin/version", s.handleVersion)
 	s.mux.HandleFunc("POST /admin/migrate", s.handleMigrate)
@@ -101,24 +117,44 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	s.mux.HandleFunc("POST /admin/rebalance/plan", s.handleRebalancePlan)
 	s.mux.HandleFunc("GET /admin/rebalance/stream", s.handleRebalanceStream)
 
+	// Index CRUD endpoints
+	s.mux.HandleFunc("PUT /indices/{name}", s.handleCreateIndex)
+	s.mux.HandleFunc("GET /indices", s.handleListIndices)
+	s.mux.HandleFunc("GET /indices/{name}", s.handleGetIndex)
+	s.mux.HandleFunc("DELETE /indices/{name}", s.handleDeleteIndex)
+	s.mux.HandleFunc("POST /indices/{name}/_close", s.handleCloseIndex)
+	s.mux.HandleFunc("POST /indices/{name}/_open", s.handleOpenIndex)
+
+	// Mapping endpoints
+	s.mux.HandleFunc("PUT /indices/{name}/_mapping", s.handlePutMapping)
+	s.mux.HandleFunc("GET /indices/{name}/_mapping", s.handleGetMapping)
+
+	// Document ingestion endpoints
+	s.mux.HandleFunc("POST /indices/{name}/_doc", s.handleIndexDoc)
+	s.mux.HandleFunc("POST /indices/{name}/_bulk", s.handleBulkDocs)
+
+	// Schema registry endpoints
+	s.mux.HandleFunc("PUT /indices/{name}/_schema", s.handlePutSchema)
+	s.mux.HandleFunc("GET /indices/{name}/_schema", s.handleGetSchema)
+	s.mux.HandleFunc("DELETE /indices/{name}/_schema", s.handleDeleteSchema)
+
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)
-	
+
 	// Metrics endpoint (Prometheus)
 	s.mux.Handle("GET /metrics", promhttp.Handler())
-	
+
 	return s, nil
 }
 
 // Handler returns the HTTP handler with security middleware
 func (s *Server) Handler() http.Handler {
-	// Chain middleware: rate limit -> auth -> authz -> handlers
 	handler := security.ChainHTTPMiddleware(
 		security.HTTPRateLimitMiddleware(s.rateLimiter),
 		security.HTTPAuthMiddleware(s.authenticator),
 		security.HTTPAuthzMiddleware(s.authorizer),
 	)(s.mux)
-	
+
 	return handler
 }
 

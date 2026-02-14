@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/chronicblondiee/duckdb-cluster/internal/index"
 	"github.com/chronicblondiee/duckdb-cluster/internal/router"
 	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 )
@@ -14,9 +15,10 @@ type ClusterStatus struct {
 }
 
 type Cluster struct {
-	Config  *Config
-	Manager *shard.Manager
-	Router  *router.Router
+	Config   *Config
+	Manager  *shard.Manager
+	Router   *router.Router
+	Registry *index.Registry
 }
 
 func NewCluster(cfg *Config) (*Cluster, error) {
@@ -25,19 +27,27 @@ func NewCluster(cfg *Config) (*Cluster, error) {
 
 func (c *Cluster) Init() error {
 	slog.Info("initializing cluster", "shards", c.Config.NumShards, "data_dir", c.Config.DataDir)
-	m, err := shard.NewManager(c.Config.DataDir, c.Config.NumShards)
-	if err != nil {
-		return fmt.Errorf("init shards: %w", err)
+
+	// Create registry and _default index
+	reg := index.NewRegistry(c.Config.DataDir)
+	settings := index.Settings{
+		ShardCount:        c.Config.NumShards,
+		PartitionKeyField: "_id",
 	}
-	c.Manager = m
-	c.Router = router.NewRouter(m)
+	idx, err := reg.Create("_default", settings)
+	if err != nil {
+		return fmt.Errorf("create _default index: %w", err)
+	}
+	c.Registry = reg
+	c.Manager = idx.Manager
+	c.Router = idx.Router
 
 	if err := c.Config.Save("cluster.json"); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
 	// Close shards after init — they'll be reopened on start
-	if err := m.CloseAll(); err != nil {
+	if err := reg.CloseAll(); err != nil {
 		return fmt.Errorf("close shards after init: %w", err)
 	}
 
@@ -47,13 +57,25 @@ func (c *Cluster) Init() error {
 
 func (c *Cluster) Start() error {
 	slog.Info("starting cluster", "data_dir", c.Config.DataDir)
-	m := &shard.Manager{DataDir: c.Config.DataDir}
-	if err := m.OpenAll(); err != nil {
-		return fmt.Errorf("open shards: %w", err)
+
+	reg := index.NewRegistry(c.Config.DataDir)
+	if err := reg.LoadAll(); err != nil {
+		return fmt.Errorf("load indices: %w", err)
 	}
-	c.Manager = m
-	c.Router = router.NewRouter(m)
-	slog.Info("cluster started", "shards", m.ShardCount())
+	c.Registry = reg
+
+	// Set Manager/Router from _default index for backward compat
+	defaultIdx, err := reg.Get("_default")
+	if err != nil {
+		slog.Warn("no _default index found, falling back to empty manager")
+		c.Manager = &shard.Manager{DataDir: c.Config.DataDir}
+		c.Router = router.NewRouter(c.Manager)
+	} else {
+		c.Manager = defaultIdx.Manager
+		c.Router = defaultIdx.Router
+		slog.Info("cluster started", "shards", defaultIdx.Manager.ShardCount())
+	}
+
 	return nil
 }
 
@@ -70,6 +92,9 @@ func (c *Cluster) Status() (*ClusterStatus, error) {
 
 func (c *Cluster) Shutdown() error {
 	slog.Info("shutting down cluster")
+	if c.Registry != nil {
+		return c.Registry.CloseAll()
+	}
 	if c.Manager != nil {
 		return c.Manager.CloseAll()
 	}

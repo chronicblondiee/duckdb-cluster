@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
-	"github.com/chronicblondiee/duckdb-cluster/internal/router"
-	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 )
 
 func TestIntegration(t *testing.T) {
@@ -26,14 +24,13 @@ func TestIntegration(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	// Start cluster
-	m := &shard.Manager{DataDir: dir}
-	if err := m.OpenAll(); err != nil {
-		t.Fatalf("OpenAll: %v", err)
+	// Start cluster (loads indices from disk)
+	if err := c.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
-	defer m.CloseAll()
+	defer c.Shutdown()
 
-	r := router.NewRouter(m)
+	r := c.Router
 
 	// Create table on all shards
 	result, err := r.Route(ctx, "CREATE TABLE users (id INTEGER, name VARCHAR)", "")

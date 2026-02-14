@@ -57,10 +57,13 @@ type Config struct {
 type CommonConfig struct {
 	// DataDir is the directory where shard files are stored
 	DataDir string `yaml:"data_dir"`
-	
-	// NumShards is the number of shards to create/use
+
+	// NumShards is the default number of shards for new indices
 	NumShards int `yaml:"num_shards"`
-	
+
+	// DefaultIndex is the name of the default index (defaults to "_default")
+	DefaultIndex string `yaml:"default_index"`
+
 	// LogLevel controls logging verbosity (debug, info, warn, error)
 	LogLevel string `yaml:"log_level"`
 }
@@ -379,9 +382,10 @@ func Default() *Config {
 	return &Config{
 		Target: "all",
 		Common: CommonConfig{
-			DataDir:   "./data",
-			NumShards: 3,
-			LogLevel:  "info",
+			DataDir:      "./data",
+			NumShards:    3,
+			DefaultIndex: "_default",
+			LogLevel:     "info",
 		},
 		Server: ServerConfig{
 			HTTPListenAddr:  ":8080",
