@@ -1,7 +1,10 @@
 .PHONY: build run test clean proto
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")
+LDFLAGS = -X github.com/chronicblondiee/duckdb-cluster/internal/migration.Version=$(VERSION)
+
 build:
-	go build -o bin/duckdb-cluster ./cmd/duckdb-cluster/
+	go build -ldflags "$(LDFLAGS)" -o bin/duckdb-cluster ./cmd/duckdb-cluster/
 
 run: build
 	./bin/duckdb-cluster start

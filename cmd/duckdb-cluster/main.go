@@ -10,11 +10,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/chronicblondiee/duckdb-cluster/internal/backup"
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
 	"github.com/chronicblondiee/duckdb-cluster/internal/config"
 	"github.com/chronicblondiee/duckdb-cluster/internal/distributor"
 	"github.com/chronicblondiee/duckdb-cluster/internal/frontend"
 	"github.com/chronicblondiee/duckdb-cluster/internal/ingester"
+	"github.com/chronicblondiee/duckdb-cluster/internal/migration"
 	"github.com/chronicblondiee/duckdb-cluster/internal/module"
 	"github.com/chronicblondiee/duckdb-cluster/internal/modules"
 	"github.com/chronicblondiee/duckdb-cluster/internal/observability"
@@ -189,6 +191,26 @@ func startCluster(cfg *config.Config) error {
 	clust.Manager = ing.GetManager()
 	clust.Router = ing.GetRouter()
 
+	// Create backup manager (shared between server and migration manager)
+	backupManager, err := backup.NewBackupManager(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create backup manager: %w", err)
+	}
+
+	// Create migration manager and run pending migrations on startup
+	migrationMgr := migration.NewManager(cfg.Common.DataDir, ing.GetManager(), backupManager)
+	registerMigrations(migrationMgr)
+
+	migrationResult, err := migrationMgr.RunPending(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+	if len(migrationResult.Applied) > 0 {
+		logger.Info("migrations applied on startup",
+			"count", len(migrationResult.Applied),
+			"backup_id", migrationResult.BackupID)
+	}
+
 	// Register modules
 	mgr.Register(modules.NewIngesterModule(cfg, ing))
 	mgr.Register(modules.NewQuerierModule(cfg, quer))
@@ -196,7 +218,9 @@ func startCluster(cfg *config.Config) error {
 	mgr.Register(modules.NewQueryFrontendModule(cfg, fe))
 	mgr.Register(modules.NewAdminModule(cfg))
 	mgr.Register(modules.NewCompactorModule(cfg))
-	mgr.Register(modules.NewServerModule(cfg, clust))
+	serverMod := modules.NewServerModule(cfg, clust)
+	serverMod.SetMigrationManager(migrationMgr)
+	mgr.Register(serverMod)
 
 	// Start modules based on target
 	if err := mgr.Start(ctx, cfg.Target); err != nil {
@@ -207,6 +231,20 @@ func startCluster(cfg *config.Config) error {
 
 	// Block forever (modules handle their own shutdown)
 	select {}
+}
+
+// registerMigrations registers all known schema migrations.
+// Add new migrations here as the schema evolves.
+func registerMigrations(mgr *migration.Manager) {
+	// Example:
+	// mgr.Register(migration.MigrationDef{
+	//     ID:          "001_add_created_at",
+	//     Description: "Add created_at column to events table",
+	//     Up: func(ctx context.Context, s *shard.Shard) error {
+	//         _, err := s.Execute(ctx, "ALTER TABLE events ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT now()")
+	//         return err
+	//     },
+	// })
 }
 
 func cmdStatus(args []string) {

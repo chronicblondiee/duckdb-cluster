@@ -12,15 +12,22 @@ import (
 	"github.com/chronicblondiee/duckdb-cluster/internal/api"
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
 	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/migration"
 	"github.com/chronicblondiee/duckdb-cluster/internal/module"
 )
 
 // ServerModule wraps the HTTP/gRPC server
 type ServerModule struct {
-	cfg     *config.Config
-	cluster *cluster.Cluster
-	server  *api.Server
-	done    chan os.Signal
+	cfg              *config.Config
+	cluster          *cluster.Cluster
+	server           *api.Server
+	migrationManager *migration.Manager
+	done             chan os.Signal
+}
+
+// SetMigrationManager sets the migration manager to be passed to the API server.
+func (s *ServerModule) SetMigrationManager(mm *migration.Manager) {
+	s.migrationManager = mm
 }
 
 // NewServerModule creates a new server module
@@ -50,6 +57,9 @@ func (s *ServerModule) Init(ctx context.Context) error {
 	srv, err := api.NewServer(s.cluster, s.cfg)
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)
+	}
+	if s.migrationManager != nil {
+		srv.SetMigrationManager(s.migrationManager)
 	}
 	s.server = srv
 	return nil

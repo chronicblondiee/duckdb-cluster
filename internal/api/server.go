@@ -12,6 +12,7 @@ import (
 	"github.com/chronicblondiee/duckdb-cluster/internal/backup"
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
 	"github.com/chronicblondiee/duckdb-cluster/internal/config"
+	"github.com/chronicblondiee/duckdb-cluster/internal/migration"
 	"github.com/chronicblondiee/duckdb-cluster/internal/security"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -21,8 +22,9 @@ type Server struct {
 	mux           *http.ServeMux
 	authenticator *security.Authenticator
 	authorizer    *security.Authorizer
-	rateLimiter   *security.RateLimiter
-	backupManager *backup.BackupManager
+	rateLimiter      *security.RateLimiter
+	backupManager    *backup.BackupManager
+	migrationManager *migration.Manager
 }
 
 func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
@@ -86,6 +88,10 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	s.mux.HandleFunc("POST /admin/backups/", s.handleRestoreBackup) // Handles /admin/backups/{id}/restore
 	s.mux.HandleFunc("DELETE /admin/backups/", s.handleDeleteBackup) // Handles /admin/backups/{id}
 	
+	// Migration endpoints
+	s.mux.HandleFunc("GET /admin/version", s.handleVersion)
+	s.mux.HandleFunc("POST /admin/migrate", s.handleMigrate)
+
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	
@@ -105,6 +111,11 @@ func (s *Server) Handler() http.Handler {
 	)(s.mux)
 	
 	return handler
+}
+
+// SetMigrationManager sets the migration manager for version/migrate endpoints.
+func (s *Server) SetMigrationManager(mm *migration.Manager) {
+	s.migrationManager = mm
 }
 
 func (s *Server) Start(addr string) error {
