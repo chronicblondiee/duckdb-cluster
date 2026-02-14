@@ -13,6 +13,7 @@ import (
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
 	"github.com/chronicblondiee/duckdb-cluster/internal/config"
 	"github.com/chronicblondiee/duckdb-cluster/internal/migration"
+	"github.com/chronicblondiee/duckdb-cluster/internal/rebalance"
 	"github.com/chronicblondiee/duckdb-cluster/internal/security"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -25,6 +26,7 @@ type Server struct {
 	rateLimiter      *security.RateLimiter
 	backupManager    *backup.BackupManager
 	migrationManager *migration.Manager
+	rebalancer       *rebalance.Rebalancer
 }
 
 func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
@@ -62,6 +64,7 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 		authorizer:    authorizer,
 		rateLimiter:   rateLimiter,
 		backupManager: backupManager,
+		rebalancer:    rebalance.NewRebalancer(c.Manager, slog.Default()),
 	}
 	
 	// Query endpoints
@@ -91,6 +94,11 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	// Migration endpoints
 	s.mux.HandleFunc("GET /admin/version", s.handleVersion)
 	s.mux.HandleFunc("POST /admin/migrate", s.handleMigrate)
+
+	// Rebalance endpoints
+	s.mux.HandleFunc("POST /admin/rebalance", s.handleRebalance)
+	s.mux.HandleFunc("GET /admin/rebalance/status", s.handleRebalanceStatus)
+	s.mux.HandleFunc("POST /admin/rebalance/plan", s.handleRebalancePlan)
 
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)

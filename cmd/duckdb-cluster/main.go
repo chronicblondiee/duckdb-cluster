@@ -43,6 +43,8 @@ func main() {
 		cmdMigrate(os.Args[2:])
 	case "backup":
 		cmdBackup(os.Args[2:])
+	case "rebalance":
+		cmdRebalance(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -60,6 +62,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  version   Show version and migration status")
 	fmt.Fprintln(os.Stderr, "  migrate   Manage schema migrations (status, run)")
 	fmt.Fprintln(os.Stderr, "  backup    Manage backups (list, create, restore, delete)")
+	fmt.Fprintln(os.Stderr, "  rebalance Rebalance data across shards (plan, run, status)")
 }
 
 func cmdInit(args []string) {
@@ -565,6 +568,164 @@ func cmdBackupDelete(args []string) {
 	}
 
 	fmt.Printf("Backup deleted: %s\n", *id)
+}
+
+func cmdRebalance(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: duckdb-cluster rebalance <subcommand>")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Subcommands:")
+		fmt.Fprintln(os.Stderr, "  plan    Show migration plan (dry run)")
+		fmt.Fprintln(os.Stderr, "  run     Execute rebalance")
+		fmt.Fprintln(os.Stderr, "  status  Show rebalance progress")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "plan":
+		cmdRebalancePlan(args[1:])
+	case "run":
+		cmdRebalanceRun(args[1:])
+	case "status":
+		cmdRebalanceStatus(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown rebalance subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func cmdRebalancePlan(args []string) {
+	fs := flag.NewFlagSet("rebalance plan", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	pkCol := fs.String("partition-key", "", "partition key column (required)")
+	tables := fs.String("tables", "", "comma-separated table names (empty = all)")
+	targetShards := fs.Int("target-shards", 0, "target shard count (0 = current)")
+	fs.Parse(args)
+
+	if *pkCol == "" {
+		fmt.Fprintln(os.Stderr, "Error: --partition-key is required")
+		os.Exit(1)
+	}
+
+	body := buildRebalanceBody(*pkCol, *tables, 0, *targetShards)
+	url := fmt.Sprintf("http://localhost%s/admin/rebalance/plan", *addr)
+	resp, err := http.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var plan map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&plan); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	if errMsg, ok := plan["error"].(string); ok {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", errMsg)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Shard count:   %v\n", formatFloat(plan["shard_count"]))
+	fmt.Printf("Total rows:    %v\n", formatFloat(plan["total_rows"]))
+	fmt.Printf("Rows to move:  %v\n", formatFloat(plan["rows_to_move"]))
+
+	if summary, ok := plan["summary"].(map[string]any); ok {
+		fmt.Println("\nPer-table summary:")
+		for table, v := range summary {
+			if ts, ok := v.(map[string]any); ok {
+				fmt.Printf("  %s: %v total, %v to move\n", table, formatFloat(ts["total_rows"]), formatFloat(ts["rows_to_move"]))
+			}
+		}
+	}
+}
+
+func cmdRebalanceRun(args []string) {
+	fs := flag.NewFlagSet("rebalance run", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	pkCol := fs.String("partition-key", "", "partition key column (required)")
+	tables := fs.String("tables", "", "comma-separated table names (empty = all)")
+	batchSize := fs.Int("batch-size", 0, "rows per batch (0 = default 1000)")
+	targetShards := fs.Int("target-shards", 0, "target shard count (0 = current)")
+	fs.Parse(args)
+
+	if *pkCol == "" {
+		fmt.Fprintln(os.Stderr, "Error: --partition-key is required")
+		os.Exit(1)
+	}
+
+	body := buildRebalanceBody(*pkCol, *tables, *batchSize, *targetShards)
+	url := fmt.Sprintf("http://localhost%s/admin/rebalance", *addr)
+	resp, err := http.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var status map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	if errMsg, ok := status["error"].(string); ok {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", errMsg)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Rebalance started (state: %v)\n", status["state"])
+	fmt.Println("Use 'duckdb-cluster rebalance status' to monitor progress.")
+}
+
+func cmdRebalanceStatus(args []string) {
+	fs := flag.NewFlagSet("rebalance status", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	fs.Parse(args)
+
+	url := fmt.Sprintf("http://localhost%s/admin/rebalance/status", *addr)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var status map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("State:         %v\n", status["state"])
+	fmt.Printf("Tables:        %v / %v\n", formatFloat(status["tables_done"]), formatFloat(status["tables_total"]))
+	fmt.Printf("Rows scanned:  %v\n", formatFloat(status["rows_scanned"]))
+	fmt.Printf("Rows moved:    %v\n", formatFloat(status["rows_moved"]))
+
+	if errs, ok := status["errors"].([]any); ok && len(errs) > 0 {
+		fmt.Println("\nErrors:")
+		for _, e := range errs {
+			fmt.Printf("  - %v\n", e)
+		}
+	}
+}
+
+func buildRebalanceBody(pkCol, tables string, batchSize, targetShards int) string {
+	cfg := map[string]any{
+		"partition_key_column": pkCol,
+	}
+	if tables != "" {
+		cfg["tables"] = strings.Split(tables, ",")
+	}
+	if batchSize > 0 {
+		cfg["batch_size"] = batchSize
+	}
+	if targetShards > 0 {
+		cfg["target_shard_count"] = targetShards
+	}
+	b, _ := json.Marshal(cfg)
+	return string(b)
 }
 
 // formatFloat formats a JSON number (float64) as an integer string for display.
