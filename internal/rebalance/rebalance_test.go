@@ -304,3 +304,105 @@ func TestPlanMissingPartitionKeyColumn(t *testing.T) {
 		t.Error("expected error for empty partition_key_column")
 	}
 }
+
+func TestWriteGate(t *testing.T) {
+	g := &WriteGate{}
+
+	if g.IsPaused() {
+		t.Error("gate should start unpaused")
+	}
+
+	g.Pause()
+	if !g.IsPaused() {
+		t.Error("gate should be paused after Pause()")
+	}
+
+	g.Resume()
+	if g.IsPaused() {
+		t.Error("gate should be unpaused after Resume()")
+	}
+}
+
+func TestWriteGateDuringExecute(t *testing.T) {
+	m := setupManager(t, 2)
+	createTable(t, m, "users")
+	insertRow(t, m, "users", "alice", "Alice", 2)
+
+	rb := NewRebalancer(m, slog.Default())
+
+	if rb.WriteGateRef().IsPaused() {
+		t.Error("gate should not be paused before execute")
+	}
+
+	ctx := context.Background()
+	rb.Execute(ctx, Config{PartitionKeyColumn: "id"})
+
+	if rb.WriteGateRef().IsPaused() {
+		t.Error("gate should be unpaused after execute completes")
+	}
+}
+
+func TestSubscribeReceivesUpdates(t *testing.T) {
+	m := setupManager(t, 2)
+	createTable(t, m, "users")
+
+	ids := []string{"alice", "bob", "charlie", "dave"}
+	for _, id := range ids {
+		insertRow(t, m, "users", id, "name_"+id, 2)
+	}
+
+	// Add a third shard to force data movement
+	newShard, err := m.AddShard()
+	if err != nil {
+		t.Fatalf("AddShard: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := newShard.Execute(ctx, `CREATE TABLE "users" (id VARCHAR, name VARCHAR)`); err != nil {
+		t.Fatalf("create table on new shard: %v", err)
+	}
+
+	rb := NewRebalancer(m, slog.Default())
+
+	ch, unsub := rb.Subscribe()
+	defer unsub()
+
+	rb.Execute(ctx, Config{PartitionKeyColumn: "id"})
+
+	// Drain all updates and check we got terminal state
+	var states []string
+	for {
+		select {
+		case s, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed unexpectedly")
+			}
+			states = append(states, s.State)
+			if s.State == "completed" || s.State == "failed" {
+				goto done
+			}
+		default:
+			goto done
+		}
+	}
+done:
+
+	if len(states) == 0 {
+		t.Fatal("expected at least one status update")
+	}
+
+	lastState := states[len(states)-1]
+	if lastState != "completed" {
+		t.Errorf("expected last state to be completed, got %s", lastState)
+	}
+
+	// Check that we saw progression through states
+	seenPlanning := false
+	for _, s := range states {
+		if s == "planning" {
+			seenPlanning = true
+		}
+	}
+	if !seenPlanning {
+		t.Error("expected to see 'planning' state in updates")
+	}
+}

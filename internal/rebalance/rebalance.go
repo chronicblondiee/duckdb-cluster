@@ -3,10 +3,21 @@ package rebalance
 import (
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 )
+
+// WriteGate controls whether writes are allowed. During rebalance, the gate
+// is paused to prevent conflicting writes.
+type WriteGate struct {
+	paused atomic.Bool
+}
+
+func (g *WriteGate) Pause()         { g.paused.Store(true) }
+func (g *WriteGate) Resume()        { g.paused.Store(false) }
+func (g *WriteGate) IsPaused() bool { return g.paused.Load() }
 
 // Config controls what and how to rebalance.
 type Config struct {
@@ -54,18 +65,65 @@ type Plan struct {
 
 // Rebalancer orchestrates data migration between shards.
 type Rebalancer struct {
-	manager *shard.Manager
-	logger  *slog.Logger
+	manager   *shard.Manager
+	logger    *slog.Logger
+	writeGate *WriteGate
 
 	mu     sync.RWMutex
 	status Status
+
+	subMu       sync.Mutex
+	subscribers map[int]chan Status
+	nextSubID   int
 }
 
 func NewRebalancer(manager *shard.Manager, logger *slog.Logger) *Rebalancer {
 	return &Rebalancer{
-		manager: manager,
-		logger:  logger,
-		status:  Status{State: "idle"},
+		manager:     manager,
+		logger:      logger,
+		writeGate:   &WriteGate{},
+		status:      Status{State: "idle"},
+		subscribers: make(map[int]chan Status),
+	}
+}
+
+// WriteGateRef returns the write gate for external consumers to check.
+func (rb *Rebalancer) WriteGateRef() *WriteGate {
+	return rb.writeGate
+}
+
+// Subscribe returns a channel that receives status updates and an unsubscribe function.
+func (rb *Rebalancer) Subscribe() (<-chan Status, func()) {
+	rb.subMu.Lock()
+	defer rb.subMu.Unlock()
+
+	id := rb.nextSubID
+	rb.nextSubID++
+
+	ch := make(chan Status, 16)
+	rb.subscribers[id] = ch
+
+	unsubscribe := func() {
+		rb.subMu.Lock()
+		defer rb.subMu.Unlock()
+		delete(rb.subscribers, id)
+		close(ch)
+	}
+
+	return ch, unsubscribe
+}
+
+// notify sends current status to all subscribers (non-blocking).
+func (rb *Rebalancer) notify() {
+	rb.subMu.Lock()
+	defer rb.subMu.Unlock()
+
+	status := rb.GetStatus()
+	for _, ch := range rb.subscribers {
+		select {
+		case ch <- status:
+		default:
+		}
 	}
 }
 
@@ -84,6 +142,7 @@ func (rb *Rebalancer) GetStatus() Status {
 
 func (rb *Rebalancer) setStatus(fn func(*Status)) {
 	rb.mu.Lock()
-	defer rb.mu.Unlock()
 	fn(&rb.status)
+	rb.mu.Unlock()
+	rb.notify()
 }

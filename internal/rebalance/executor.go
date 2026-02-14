@@ -21,6 +21,9 @@ func (rb *Rebalancer) Execute(ctx context.Context, cfg Config) (*Status, error) 
 		cfg.BatchSize = defaultBatchSize
 	}
 
+	rb.writeGate.Pause()
+	defer rb.writeGate.Resume()
+
 	rb.setStatus(func(s *Status) {
 		*s = Status{
 			State:     "planning",

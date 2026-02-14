@@ -99,6 +99,7 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	s.mux.HandleFunc("POST /admin/rebalance", s.handleRebalance)
 	s.mux.HandleFunc("GET /admin/rebalance/status", s.handleRebalanceStatus)
 	s.mux.HandleFunc("POST /admin/rebalance/plan", s.handleRebalancePlan)
+	s.mux.HandleFunc("GET /admin/rebalance/stream", s.handleRebalanceStream)
 
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)

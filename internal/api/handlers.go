@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/chronicblondiee/duckdb-cluster/internal/rebalance"
 )
 
 type queryRequest struct {
@@ -85,6 +89,11 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.rebalancer.WriteGateRef().IsPaused() && isWriteSQL(req.SQL) {
+		writeJSON(w, http.StatusServiceUnavailable, queryResponse{Error: "writes paused: rebalance in progress"})
+		return
+	}
+
 	result, err := s.Cluster.Router.Route(r.Context(), req.SQL, req.PartitionKey)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, queryResponse{Error: err.Error()})
@@ -120,17 +129,39 @@ func (s *Server) handleListShards(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"shards": shards})
 }
 
+type addShardRequest struct {
+	Rebalance *rebalance.Config `json:"rebalance,omitempty"`
+}
+
 func (s *Server) handleAddShard(w http.ResponseWriter, r *http.Request) {
+	var req addShardRequest
+	json.NewDecoder(r.Body).Decode(&req) // body may be empty
+
 	sh, err := s.Cluster.Manager.AddShard()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, shardInfo{
-		ID:     sh.ID,
-		Path:   sh.Path,
-		Status: "open",
-	})
+
+	resp := map[string]any{
+		"id":     sh.ID,
+		"path":   sh.Path,
+		"status": "open",
+	}
+
+	if req.Rebalance != nil {
+		cfg := *req.Rebalance
+		go func() {
+			s.rebalancer.Execute(context.Background(), cfg)
+		}()
+		resp["rebalance"] = "started"
+	}
+
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+type removeShardRequest struct {
+	Rebalance *rebalance.Config `json:"rebalance,omitempty"`
 }
 
 func (s *Server) handleRemoveShard(w http.ResponseWriter, r *http.Request) {
@@ -140,6 +171,24 @@ func (s *Server) handleRemoveShard(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid shard id"})
 		return
 	}
+
+	var req removeShardRequest
+	json.NewDecoder(r.Body).Decode(&req) // body may be empty
+
+	if req.Rebalance != nil {
+		cfg := *req.Rebalance
+		cfg.TargetShardCount = s.Cluster.Manager.ShardCount() - 1
+
+		if _, err := s.rebalancer.Execute(r.Context(), cfg); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "rebalance before remove failed: " + err.Error(),
+			})
+			return
+		}
+		// After rebalancing to N-1, remove the last shard (now empty)
+		id = s.Cluster.Manager.ShardCount() - 1
+	}
+
 	if err := s.Cluster.Manager.RemoveShard(id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -181,7 +230,18 @@ func (s *Server) handleBulk(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
+	if s.rebalancer.WriteGateRef().IsPaused() {
+		writeJSON(w, http.StatusServiceUnavailable, bulkResponse{
+			Failed: len(req.Statements),
+			Results: []bulkItemResult{{
+				Success: false,
+				Error:   "writes paused: rebalance in progress",
+			}},
+		})
+		return
+	}
+
 	// Group statements by shard
 	type shardGroup struct {
 		shardID    int
@@ -307,7 +367,21 @@ func (s *Server) handleMultiQuery(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
+	if s.rebalancer.WriteGateRef().IsPaused() {
+		for _, q := range req.Queries {
+			if isWriteSQL(q.SQL) {
+				writeJSON(w, http.StatusServiceUnavailable, multiQueryResponse{
+					Results: []multiQueryResult{{
+						Success: false,
+						Error:   "writes paused: rebalance in progress",
+					}},
+				})
+				return
+			}
+		}
+	}
+
 	// Execute all queries in parallel
 	results := make([]multiQueryResult, len(req.Queries))
 	var wg sync.WaitGroup
@@ -511,6 +585,14 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		},
 		"shards": shardStats,
 	})
+}
+
+// isWriteSQL returns true if the SQL statement is a write operation.
+func isWriteSQL(sql string) bool {
+	kw := strings.ToUpper(strings.TrimSpace(sql))
+	return strings.HasPrefix(kw, "INSERT") ||
+		strings.HasPrefix(kw, "UPDATE") ||
+		strings.HasPrefix(kw, "DELETE")
 }
 
 // applyPagination applies offset and limit to result rows
