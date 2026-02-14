@@ -5,5 +5,5 @@ data/
 cluster.json
 
 # Compiled binaries
-duckdb-cluster
 /duckdb-cluster
+!/cmd/duckdb-cluster/

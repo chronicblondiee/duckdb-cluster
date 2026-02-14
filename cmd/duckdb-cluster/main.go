@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chronicblondiee/duckdb-cluster/internal/backup"
@@ -36,6 +37,12 @@ func main() {
 		cmdStart(os.Args[2:])
 	case "status":
 		cmdStatus(os.Args[2:])
+	case "version":
+		cmdVersion(os.Args[2:])
+	case "migrate":
+		cmdMigrate(os.Args[2:])
+	case "backup":
+		cmdBackup(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -47,9 +54,12 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: duckdb-cluster <command> [flags]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  init    Initialize a new cluster")
-	fmt.Fprintln(os.Stderr, "  start   Start the cluster server")
-	fmt.Fprintln(os.Stderr, "  status  Check cluster status")
+	fmt.Fprintln(os.Stderr, "  init      Initialize a new cluster")
+	fmt.Fprintln(os.Stderr, "  start     Start the cluster server")
+	fmt.Fprintln(os.Stderr, "  status    Check cluster status")
+	fmt.Fprintln(os.Stderr, "  version   Show version and migration status")
+	fmt.Fprintln(os.Stderr, "  migrate   Manage schema migrations (status, run)")
+	fmt.Fprintln(os.Stderr, "  backup    Manage backups (list, create, restore, delete)")
 }
 
 func cmdInit(args []string) {
@@ -267,4 +277,300 @@ func cmdStatus(args []string) {
 	}
 
 	fmt.Printf("Status: %s\nShards: %d\n", status.Status, status.ShardCount)
+}
+
+func cmdVersion(args []string) {
+	fs := flag.NewFlagSet("version", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	fs.Parse(args)
+
+	url := fmt.Sprintf("http://localhost%s/admin/version", *addr)
+	resp, err := http.Get(url)
+	if err != nil {
+		// Server not running — print build-time version only
+		fmt.Printf("duckdb-cluster %s (server not reachable)\n", migration.Version)
+		return
+	}
+	defer resp.Body.Close()
+
+	var status map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Binary version:  %v\n", status["binary_version"])
+	fmt.Printf("State version:   %v\n", status["state_version"])
+	fmt.Printf("Applied:         %v\n", formatFloat(status["applied_count"]))
+	fmt.Printf("Pending:         %v\n", formatFloat(status["pending_count"]))
+}
+
+func cmdMigrate(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: duckdb-cluster migrate <subcommand>")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Subcommands:")
+		fmt.Fprintln(os.Stderr, "  status  Show migration status")
+		fmt.Fprintln(os.Stderr, "  run     Run pending migrations")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "status":
+		cmdMigrateStatus(args[1:])
+	case "run":
+		cmdMigrateRun(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown migrate subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func cmdMigrateStatus(args []string) {
+	fs := flag.NewFlagSet("migrate status", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	fs.Parse(args)
+
+	url := fmt.Sprintf("http://localhost%s/admin/version", *addr)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var status map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Binary version:  %v\n", status["binary_version"])
+	fmt.Printf("State version:   %v\n", status["state_version"])
+	fmt.Printf("Applied:         %v\n", formatFloat(status["applied_count"]))
+	fmt.Printf("Pending:         %v\n", formatFloat(status["pending_count"]))
+
+	if pending, ok := status["pending_migrations"].([]any); ok && len(pending) > 0 {
+		fmt.Println("\nPending migrations:")
+		for _, m := range pending {
+			fmt.Printf("  - %v\n", m)
+		}
+	}
+
+	if lastAt, ok := status["last_migration_at"].(string); ok && lastAt != "" && lastAt != "0001-01-01T00:00:00Z" {
+		fmt.Printf("\nLast migration:  %s\n", lastAt)
+	}
+}
+
+func cmdMigrateRun(args []string) {
+	fs := flag.NewFlagSet("migrate run", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	fs.Parse(args)
+
+	url := fmt.Sprintf("http://localhost%s/admin/migrate", *addr)
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result migration.MigrationResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	if result.Error != "" {
+		fmt.Fprintf(os.Stderr, "Migration failed: %s\n", result.Error)
+		if result.BackupID != "" {
+			fmt.Fprintf(os.Stderr, "Backup available for restore: %s\n", result.BackupID)
+		}
+		os.Exit(1)
+	}
+
+	if len(result.Applied) == 0 {
+		fmt.Println("No pending migrations.")
+		return
+	}
+
+	fmt.Printf("Applied %d migration(s):\n", len(result.Applied))
+	for _, id := range result.Applied {
+		fmt.Printf("  - %s\n", id)
+	}
+	if result.BackupID != "" {
+		fmt.Printf("\nPre-migration backup: %s\n", result.BackupID)
+	}
+	fmt.Printf("Version: %s -> %s\n", result.PrevVersion, result.NewVersion)
+}
+
+func cmdBackup(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: duckdb-cluster backup <subcommand>")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Subcommands:")
+		fmt.Fprintln(os.Stderr, "  list     List all backups")
+		fmt.Fprintln(os.Stderr, "  create   Create a new backup")
+		fmt.Fprintln(os.Stderr, "  restore  Restore from a backup")
+		fmt.Fprintln(os.Stderr, "  delete   Delete a backup")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "list":
+		cmdBackupList(args[1:])
+	case "create":
+		cmdBackupCreate(args[1:])
+	case "restore":
+		cmdBackupRestore(args[1:])
+	case "delete":
+		cmdBackupDelete(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown backup subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func cmdBackupList(args []string) {
+	fs := flag.NewFlagSet("backup list", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	fs.Parse(args)
+
+	url := fmt.Sprintf("http://localhost%s/admin/backups", *addr)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Backups []backup.BackupMetadata `json:"backups"`
+		Count   int                     `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	if result.Count == 0 {
+		fmt.Println("No backups found.")
+		return
+	}
+
+	fmt.Printf("%-36s  %-12s  %-8s  %-6s  %s\n", "ID", "TYPE", "STATUS", "SHARDS", "TIMESTAMP")
+	for _, b := range result.Backups {
+		fmt.Printf("%-36s  %-12s  %-8s  %-6d  %s\n",
+			b.ID, b.Type, b.Status, b.ShardCount,
+			b.Timestamp.Format(time.RFC3339))
+	}
+}
+
+func cmdBackupCreate(args []string) {
+	fs := flag.NewFlagSet("backup create", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	backupType := fs.String("type", "full", "backup type (full, incremental)")
+	fs.Parse(args)
+
+	body := fmt.Sprintf(`{"type":%q}`, *backupType)
+	url := fmt.Sprintf("http://localhost%s/admin/backups", *addr)
+	resp, err := http.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		var errResp map[string]string
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		fmt.Fprintf(os.Stderr, "Error: %s\n", errResp["error"])
+		os.Exit(1)
+	}
+
+	var meta backup.BackupMetadata
+	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Backup created: %s\n", meta.ID)
+	fmt.Printf("Type:           %s\n", meta.Type)
+	fmt.Printf("Status:         %s\n", meta.Status)
+	fmt.Printf("Shards:         %d\n", meta.ShardCount)
+	fmt.Printf("Duration:       %s\n", meta.Duration)
+}
+
+func cmdBackupRestore(args []string) {
+	fs := flag.NewFlagSet("backup restore", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	id := fs.String("id", "", "backup ID to restore (required)")
+	fs.Parse(args)
+
+	if *id == "" {
+		fmt.Fprintln(os.Stderr, "Error: --id is required")
+		os.Exit(1)
+	}
+
+	url := fmt.Sprintf("http://localhost%s/admin/backups/%s/restore", *addr, *id)
+	resp, err := http.Post(url, "application/json", strings.NewReader("{}"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]string
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("Restore completed: %s\n", result["message"])
+}
+
+func cmdBackupDelete(args []string) {
+	fs := flag.NewFlagSet("backup delete", flag.ExitOnError)
+	addr := fs.String("addr", ":8080", "server address")
+	id := fs.String("id", "", "backup ID to delete (required)")
+	fs.Parse(args)
+
+	if *id == "" {
+		fmt.Fprintln(os.Stderr, "Error: --id is required")
+		os.Exit(1)
+	}
+
+	url := fmt.Sprintf("http://localhost%s/admin/backups/%s", *addr, *id)
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not connect to cluster at %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]string
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", result["error"])
+		os.Exit(1)
+	}
+
+	fmt.Printf("Backup deleted: %s\n", *id)
+}
+
+// formatFloat formats a JSON number (float64) as an integer string for display.
+func formatFloat(v any) string {
+	if f, ok := v.(float64); ok {
+		return fmt.Sprintf("%d", int(f))
+	}
+	return fmt.Sprintf("%v", v)
 }
