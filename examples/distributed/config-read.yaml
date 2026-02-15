@@ -30,6 +30,12 @@ observability:
   metrics:
     enabled: true
     path: /metrics
+  tracing:
+    enabled: true
+    otlp_endpoint: "jaeger:4317"
+    service_name: "duckdb-cluster"
+    environment: "distributed"
+    sample_rate: 1.0
   logging:
     level: info
     format: text

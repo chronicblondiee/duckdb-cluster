@@ -12,6 +12,9 @@ COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yaml"
 WRITE_URL="http://localhost:8081"
 READ_URL="http://localhost:8082"
 ALL_URL="http://localhost:8083"
+PROMETHEUS_URL="http://localhost:9090"
+JAEGER_URL="http://localhost:16686"
+GRAFANA_URL="http://localhost:3000"
 
 MAX_WAIT=120
 PASSED=0
@@ -103,6 +106,25 @@ wait_for_health() {
     return 1
 }
 
+wait_for_url() {
+    local url="$1"
+    local name="$2"
+    local max="$3"
+    local elapsed=0
+    echo -n "  Waiting for $name "
+    while [ $elapsed -lt "$max" ]; do
+        if curl -sf "$url" > /dev/null 2>&1; then
+            echo " ready (${elapsed}s)"
+            return 0
+        fi
+        echo -n "."
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+    echo " TIMEOUT after ${max}s"
+    return 1
+}
+
 # --- Main ---
 echo "=== DuckDB Cluster — Distributed UAT ==="
 echo ""
@@ -147,22 +169,23 @@ echo "=== Document ingestion ==="
 
 run_test "Ingest doc 1" \
     assert_http POST "$ALL_URL/indices/test-logs/_doc" \
-    '{"message":"hello world","level":"info","timestamp":"2026-01-01T00:00:00Z"}' \
+    '{"_id":"doc1","message":"hello world","level":"info","timestamp":"2026-01-01T00:00:00Z"}' \
     201 ".result" "created"
 
 run_test "Ingest doc 2" \
     assert_http POST "$ALL_URL/indices/test-logs/_doc" \
-    '{"message":"error occurred","level":"error","timestamp":"2026-01-01T00:01:00Z"}' \
+    '{"_id":"doc2","message":"error occurred","level":"error","timestamp":"2026-01-01T00:01:00Z"}' \
     201 ".result" "created"
 
 run_test "Ingest doc 3" \
     assert_http POST "$ALL_URL/indices/test-logs/_doc" \
-    '{"message":"debug trace","level":"debug","timestamp":"2026-01-01T00:02:00Z"}' \
+    '{"_id":"doc3","message":"debug trace","level":"debug","timestamp":"2026-01-01T00:02:00Z"}' \
     201 ".result" "created"
 
 run_test "Bulk ingest (2 docs)" \
     assert_http POST "$ALL_URL/indices/test-logs/_bulk" \
-    '[{"message":"bulk msg 1","level":"info"},{"message":"bulk msg 2","level":"warn"}]' \
+    '{"_id":"doc4","message":"bulk msg 1","level":"info"}
+{"_id":"doc5","message":"bulk msg 2","level":"warn"}' \
     200 ".succeeded" "2"
 
 echo ""
@@ -193,7 +216,7 @@ run_test "Create index test-metrics" \
 
 run_test "Ingest into test-metrics" \
     assert_http POST "$ALL_URL/indices/test-metrics/_doc" \
-    '{"metric":"cpu","value":42.5}' \
+    '{"_id":"m1","metric":"cpu","value":42.5}' \
     201 ".result" "created"
 
 run_test "Cross-index query" \
@@ -220,7 +243,7 @@ echo "=== Templates ==="
 
 run_test "Create template log-template" \
     assert_http PUT "$ALL_URL/templates/log-template" \
-    '{"index_patterns":["log-*"],"settings":{"shard_count":2},"mappings":{"fields":{"message":{"type":"VARCHAR"},"level":{"type":"VARCHAR"}}}}' \
+    '{"pattern":"log-*","settings":{"shard_count":2},"mapping":{"fields":{"message":{"name":"message","type":"VARCHAR"},"level":{"name":"level","type":"VARCHAR"}}}}' \
     201 ".acknowledged" "true"
 
 run_test "Get template" \
@@ -234,6 +257,24 @@ echo "=== Metrics ==="
 
 run_test "Prometheus metrics endpoint" \
     assert_http GET "$ALL_URL/metrics" "" 200
+
+echo ""
+echo "=== Observability stack ==="
+
+wait_for_url "$PROMETHEUS_URL/-/healthy" "prometheus" 60
+wait_for_url "$GRAFANA_URL/api/health" "grafana" 60
+
+run_test "Prometheus healthy" \
+    assert_http GET "$PROMETHEUS_URL/-/healthy" "" 200
+
+run_test "Prometheus targets" \
+    assert_http GET "$PROMETHEUS_URL/api/v1/targets" "" 200
+
+run_test "Jaeger UI" \
+    assert_http GET "$JAEGER_URL/" "" 200
+
+run_test "Grafana health" \
+    assert_http GET "$GRAFANA_URL/api/health" "" 200
 
 echo ""
 echo "=== Cleanup ==="
