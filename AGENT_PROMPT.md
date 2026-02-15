@@ -175,10 +175,13 @@ duckdb-cluster/
 ├── pkg/client/
 │   ├── client.go                   HTTP client library for duckdb-cluster
 │   └── bulk.go                     Bulk operations helper
+├── examples/
+│   ├── local/                      Single-node Docker Compose + config
+│   └── distributed/                Multi-node Docker Compose (write/read/all) + UAT test script
 ├── checkpoint/
 │   ├── CHECKPOINT_NNN.md           Agent checkpoint summaries
 │   └── agents/                     Sub-agent prompts (data-plane, control-plane, api-integration)
-├── Makefile                        build, run, test, clean, docker
+├── Makefile                        build, run, test, clean, docker, uat
 ├── Dockerfile                      Multi-stage container build
 ├── go.mod / go.sum                 Module: github.com/chronicblondiee/duckdb-cluster
 ├── SECURITY.md                     Security documentation

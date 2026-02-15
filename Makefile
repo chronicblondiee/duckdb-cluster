@@ -1,4 +1,4 @@
-.PHONY: build run test clean proto docker-build docker-run docker-test compose-up compose-down
+.PHONY: build run test clean proto docker-build docker-run docker-test compose-up compose-down compose-distributed-up compose-distributed-down uat
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")
 LDFLAGS = -X github.com/chronicblondiee/duckdb-cluster/internal/migration.Version=$(VERSION)
@@ -37,3 +37,12 @@ compose-up:
 
 compose-down:
 	docker compose -f examples/local/docker-compose.yaml down -v
+
+compose-distributed-up:
+	docker compose -f examples/distributed/docker-compose.yaml up --build -d
+
+compose-distributed-down:
+	docker compose -f examples/distributed/docker-compose.yaml down -v
+
+uat:
+	bash examples/distributed/test.sh

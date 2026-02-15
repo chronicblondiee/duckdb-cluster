@@ -1,0 +1,35 @@
+target: read
+
+common:
+  data_dir: /data
+  num_shards: 3
+  log_level: info
+
+server:
+  http_listen_addr: ":8080"
+  grpc_listen_addr: ":9095"
+
+ring:
+  instance_id: read-node
+  instance_addr: "read-node:9095"
+  memberlist:
+    bind_addr: "0.0.0.0"
+    bind_port: 7946
+    join_peers:
+      - "write-node:7946"
+      - "read-node:7946"
+      - "all-node:7946"
+
+querier:
+  merge_strategy: duckdb
+  max_concurrent_queries: 100
+  query_timeout: 60s
+  read_consistency: one
+
+observability:
+  metrics:
+    enabled: true
+    path: /metrics
+  logging:
+    level: info
+    format: text
