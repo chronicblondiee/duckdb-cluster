@@ -1,0 +1,8 @@
+bin/
+data/
+checkpoint/
+*.md
+.git/
+.gitignore
+*.duckdb
+*.duckdb.wal

@@ -1,0 +1,22 @@
+target: all
+
+common:
+  data_dir: /data
+  num_shards: 3
+  log_level: info
+
+server:
+  http_listen_addr: ":8080"
+  grpc_listen_addr: ":9095"
+
+observability:
+  metrics:
+    enabled: true
+    path: /metrics
+  logging:
+    level: info
+    format: text
+
+ism:
+  enabled: true
+  run_interval: 1m

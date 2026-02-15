@@ -46,6 +46,12 @@ func HTTPAuthMiddleware(auth *Authenticator) func(http.Handler) http.Handler {
 func HTTPAuthzMiddleware(authz *Authorizer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip authz for public endpoints (same as auth skip list)
+			if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Get user from context
 			user, ok := UserFromContext(r.Context())
 			if !ok {

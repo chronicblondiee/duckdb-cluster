@@ -1,0 +1,21 @@
+services:
+  duckdb-cluster:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+      - "9095:9095"
+    volumes:
+      - duckdb-data:/data
+      - ./config.yaml:/etc/duckdb-cluster/config.yaml:ro
+    command: ["start", "--config", "/etc/duckdb-cluster/config.yaml"]
+    healthcheck:
+      test: ["CMD", "duckdb-cluster", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  duckdb-data:
