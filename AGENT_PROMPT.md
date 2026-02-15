@@ -16,22 +16,51 @@ The checkpoint tells you what exists, what works, and what's left to do. Do not 
 
 ---
 
-## 2. Domain Expertise
+## 2. Choosing the Right Sub-Agent
 
-You are an expert in:
+This project uses specialized sub-agents for different domains. **Before starting any task, read this section to delegate to the correct specialist.**
 
-- **DuckDB** — an embedded OLAP database. Each instance is a single file. Single-writer limitation means concurrent writes to one instance will block. This project works around that by sharding across multiple instances.
-- **Distributed systems fundamentals** — hash-based partitioning (FNV-1a), consistent hashing rings, fan-out/scatter-gather reads, DDL broadcast, shard lifecycle management, gossip-based cluster membership (`hashicorp/memberlist`).
-- **Go concurrency** — goroutines, `sync.WaitGroup`, `sync.RWMutex` for safe concurrent shard access. Parallel query fan-out and result collection. Write gates for pausing writes during rebalancing.
-- **Go HTTP servers** — stdlib `net/http`, `http.ServeMux` with Go 1.22+ method routing (`"POST /query"`, `"DELETE /admin/shards/{id}"`), `httptest` for handler testing, graceful shutdown with signal handling, SSE streaming (`text/event-stream`).
-- **Go `database/sql`** — the standard DB interface that `duckdb-go/v2` implements. Dynamic column scanning with `rows.Columns()` and `[]any` scan targets for schema-agnostic query results.
-- **gRPC / Protocol Buffers** — inter-node communication for distributed mode. Proto definitions in `proto/`, generated Go code, gRPC client/server for ingester and querier services.
-- **Index management** — ES/OpenSearch-style multi-index system with aliases (transparent routing), templates (glob-matched auto-apply on creation), cross-index queries (comma-separated or wildcard fan-out), dynamic schema detection, and JSON/Protobuf document ingestion.
-- **Observability** — Prometheus metrics (`prometheus/client_golang`), OpenTelemetry tracing, structured logging (`log/slog`).
-- **Security** — JWT-style authentication, RBAC authorization, rate limiting, TLS support.
-- **Reliability** — admission control (memory/CPU thresholds), backpressure, graceful degradation, timeout management.
+### Sub-Agents
 
-When making changes, reason about: shard consistency (DDL must hit all shards), routing correctness (same partition key must always map to same shard), concurrency safety (readers and writers accessing the shard list), index resolution (aliases may point to multiple indices), and cross-index query correctness (fan-out + merge).
+| Agent | File | Scope |
+|---|---|---|
+| **Data Plane** | `checkpoint/agents/data-plane.md` | Index/ISM/shard/router/cluster — core data storage and query |
+| **Control Plane** | `checkpoint/agents/control-plane.md` | Security/reliability/observability/distributed/operations — cluster management |
+| **API & Integration** | `checkpoint/agents/api-integration.md` | HTTP server/handlers/CLI/client/config — external interface |
+
+### Decision Tree
+
+1. **Does the task involve indices, aliases, templates, ISM policies, document ingestion, shards, routing, or query merging?**
+   → Read `checkpoint/agents/data-plane.md`
+   → Files: `internal/index/`, `internal/ism/`, `internal/shard/`, `internal/router/`, `internal/cluster/`
+
+2. **Does the task involve authentication, authorization, TLS, rate limiting, observability, metrics, tracing, distributed mode, gossip, gRPC, backup, migration, or rebalancing?**
+   → Read `checkpoint/agents/control-plane.md`
+   → Files: `internal/security/`, `internal/reliability/`, `internal/observability/`, `internal/ring/`, `internal/grpc/`, `internal/distributor/`, `internal/frontend/`, `internal/ingester/`, `internal/querier/`, `internal/backup/`, `internal/migration/`, `internal/rebalance/`, `internal/module/`, `internal/modules/`
+
+3. **Does the task involve HTTP handlers, API endpoints, CLI commands, client library, configuration, or integration tests?**
+   → Read `checkpoint/agents/api-integration.md`
+   → Files: `internal/api/`, `internal/config/`, `pkg/client/`, `cmd/duckdb-cluster/`, `internal/integration/`
+
+4. **Does the task span multiple domains?**
+   → Start with the **primary domain** agent (where the business logic lives)
+   → Complete that domain's work first, then use the next agent for integration
+   → Example: new index feature + API endpoint → start with Data Plane, then API & Integration
+
+5. **Is the task a bug fix or test addition?**
+   → Use the agent that owns the file being modified
+
+### Keywords Quick Reference
+
+| Data Plane | Control Plane | API & Integration |
+|---|---|---|
+| index, alias, template | security, auth, JWT, RBAC | HTTP, handler, endpoint |
+| ISM, policy, state machine | TLS, rate limit, middleware | server, route, request |
+| document, mapping, schema | metrics, prometheus, tracing | CLI, command, flag |
+| shard, partition, routing | distributed, ring, gossip | client, bulk, config |
+| query, fan-out, merge | gRPC, replication, consistency | YAML, integration test |
+| DuckDB, DDL, table | backup, migration, rebalance | JSON, response, error |
+| | reliability, admission, timeout | |
 
 ---
 
@@ -146,8 +175,11 @@ duckdb-cluster/
 ├── pkg/client/
 │   ├── client.go                   HTTP client library for duckdb-cluster
 │   └── bulk.go                     Bulk operations helper
-├── checkpoint/                     Agent checkpoint summaries (001–014)
-├── Makefile                        build, run, test, clean
+├── checkpoint/
+│   ├── CHECKPOINT_NNN.md           Agent checkpoint summaries
+│   └── agents/                     Sub-agent prompts (data-plane, control-plane, api-integration)
+├── Makefile                        build, run, test, clean, docker
+├── Dockerfile                      Multi-stage container build
 ├── go.mod / go.sum                 Module: github.com/chronicblondiee/duckdb-cluster
 ├── SECURITY.md                     Security documentation
 ├── OBSERVABILITY.md                Observability guide
@@ -178,13 +210,23 @@ duckdb-cluster/
 ### Starting a task
 
 1. Read the latest checkpoint (step 1 above)
-2. Understand what's being asked
-3. Make the changes
-4. Run `go build ./cmd/duckdb-cluster/` — must compile clean
-5. Run `go test ./...` — all tests must pass
-6. If you added new behavior, add tests for it
-7. Update the checkpoint (see section 6)
-8. Commit (see section 7)
+2. Read the appropriate sub-agent prompt (step 2 above)
+3. Understand what's being asked
+4. Make the changes
+5. Run `go build ./cmd/duckdb-cluster/` — must compile clean
+6. Run `go test ./...` — all tests must pass
+7. If you added new behavior, add tests for it
+8. Update the checkpoint (see section 6)
+9. Commit (see section 7)
+
+### Cross-domain tasks
+
+For tasks spanning multiple domains:
+1. Start with the **primary domain** agent (where business logic lives)
+2. Complete that domain's work and tests
+3. Note in the checkpoint what other domains need (e.g., "Requires API endpoint in `handlers_index.go`")
+4. Load the next domain's sub-agent and continue
+5. Create a single checkpoint covering all work
 
 ### When things break
 
@@ -271,103 +313,3 @@ refactor: extract query classifier from router
 - Keep the first line under 72 characters
 - No multi-paragraph descriptions — if the change needs that much explanation, the code or checkpoint should carry it
 - Don't commit generated files, `.duckdb` data files, or `bin/`
-
----
-
-## 8. Data Flow Reference
-
-```
-WRITE:  POST /query {sql, partition_key}
-        → classify as INSERT/UPDATE/DELETE
-        → HashRoute(partition_key, N) → shard K
-        → shard K executes → respond {rows_affected, shard_id}
-
-READ:   POST /query {sql}
-        → classify as SELECT
-        → fan out to shards 0..N-1 (parallel goroutines)
-        → merge all results → respond {columns, rows}
-
-DDL:    POST /query {sql}
-        → classify as CREATE/DROP/ALTER
-        → broadcast to ALL shards
-        → all must succeed → respond success
-
-INDEX WRITE:  POST /indices/{name}/_doc {json_doc}
-              → resolve index name (check aliases → resolve to real index)
-              → detect/evolve schema via mapping manager
-              → HashRoute(partition_key, index.ShardCount) → index shard K
-              → INSERT into index shard → respond {doc_id}
-
-INDEX READ:   POST /indices/{name}/_query {sql}
-              → resolve index (alias or direct)
-              → if multi-index spec (comma-separated or wildcard):
-                  → expand to matching index list
-                  → fan out to ALL shards of ALL matched indices
-                  → merge results (union columns, concatenate rows)
-              → else: fan out to shards of single index → merge → respond
-
-REBALANCE:    POST /admin/rebalance/run
-              → WriteGate pauses all writes
-              → migrate data between shards per plan
-              → SSE stream progress via GET /admin/rebalance/stream
-              → WriteGate resumes writes on completion
-```
-
----
-
-## 9. API Quick Reference
-
-| Method | Path | Body | Description |
-|---|---|---|---|
-| **Core** | | | |
-| POST | `/query` | `{"sql": "...", "partition_key": "..."}` | Execute SQL. `partition_key` required for writes. |
-| GET | `/health` | — | `{"status": "healthy", "shard_count": N}` |
-| **Shard Admin** | | | |
-| GET | `/admin/shards` | — | List all shards |
-| POST | `/admin/shards` | — | Add a new shard |
-| DELETE | `/admin/shards/{id}` | — | Remove a shard |
-| **Indices** | | | |
-| PUT | `/indices/{name}` | `{"shard_count": N, ...}` | Create index |
-| GET | `/indices/{name}` | — | Get index detail |
-| DELETE | `/indices/{name}` | — | Delete index |
-| POST | `/indices/{name}/_close` | — | Close index |
-| POST | `/indices/{name}/_open` | — | Open index |
-| PUT | `/indices/{name}/_mapping` | `{field: type, ...}` | Update index mapping |
-| GET | `/indices/{name}/_mapping` | — | Get index mapping |
-| POST | `/indices/{name}/_doc` | `{json_doc}` | Ingest single document |
-| POST | `/indices/{name}/_bulk` | `[{doc}, ...]` | Bulk ingest documents |
-| POST | `/indices/{name}/_query` | `{"sql": "..."}` | Query index (supports multi-index: `idx-a,idx-b` or `logs-*`) |
-| GET | `/indices` | — | List all indices |
-| **Aliases** | | | |
-| PUT | `/aliases/{name}` | `{"indices": [...]}` | Create/update alias |
-| GET | `/aliases/{name}` | — | Get alias |
-| DELETE | `/aliases/{name}` | — | Delete alias |
-| GET | `/aliases` | — | List all aliases |
-| **Templates** | | | |
-| PUT | `/templates/{name}` | `{"pattern": "...", ...}` | Create/update template |
-| GET | `/templates/{name}` | — | Get template |
-| DELETE | `/templates/{name}` | — | Delete template |
-| GET | `/templates` | — | List all templates |
-| **ISM** | | | |
-| PUT | `/ism/policies/{name}` | `{policy JSON/YAML}` | Create/update ISM policy |
-| GET | `/ism/policies/{name}` | — | Get ISM policy |
-| DELETE | `/ism/policies/{name}` | — | Delete ISM policy |
-| GET | `/ism/policies` | — | List all ISM policies |
-| POST | `/ism/attach/{index}` | `{"policy": "name"}` | Attach ISM policy to index |
-| POST | `/ism/detach/{index}` | — | Detach ISM policy from index |
-| GET | `/ism/status/{index}` | — | Get ISM status for index |
-| GET | `/ism/status` | — | Get ISM status for all indices |
-| POST | `/ism/retry/{index}` | — | Retry failed ISM action |
-| **Rebalance** | | | |
-| POST | `/admin/rebalance/plan` | — | Generate rebalance plan |
-| POST | `/admin/rebalance/run` | — | Execute rebalance |
-| GET | `/admin/rebalance/status` | — | Rebalance status |
-| GET | `/admin/rebalance/stream` | — | SSE stream of rebalance progress |
-| **Migration** | | | |
-| GET | `/admin/migrate/status` | — | Migration status |
-| POST | `/admin/migrate/run` | — | Run pending migrations |
-| **Backup** | | | |
-| GET | `/admin/backup` | — | List backups |
-| POST | `/admin/backup` | — | Create backup |
-| DELETE | `/admin/backup/{name}` | — | Delete backup |
-| POST | `/admin/backup/{name}/restore` | — | Restore backup |
