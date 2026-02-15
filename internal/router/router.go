@@ -90,7 +90,7 @@ func (r *Router) handleWrite(ctx context.Context, sqlStr string, partitionKey st
 
 func (r *Router) handleRead(ctx context.Context, sqlStr string) (*QueryResult, error) {
 	// Check if query requires special handling (aggregations, ORDER BY, LIMIT, etc.)
-	needsMergeEngine := requiresMergeEngine(sqlStr)
+	needsMergeEngine := RequiresMergeEngine(sqlStr)
 	
 	var resultSets []*shard.QueryResultSet
 	var err error
@@ -102,7 +102,7 @@ func (r *Router) handleRead(ctx context.Context, sqlStr string) (*QueryResult, e
 		// 3. Apply the full query logic
 		
 		// First, get the base table name
-		tableName := extractTableName(sqlStr)
+		tableName := ExtractTableName(sqlStr)
 		if tableName == "" {
 			return nil, fmt.Errorf("could not extract table name from query")
 		}
@@ -183,7 +183,7 @@ func (r *Router) handleRead(ctx context.Context, sqlStr string) (*QueryResult, e
 }
 
 // requiresMergeEngine determines if a query requires the merge engine
-func requiresMergeEngine(sql string) bool {
+func RequiresMergeEngine(sql string) bool {
 	upper := strings.ToUpper(sql)
 	keywords := []string{
 		"COUNT(", "SUM(", "AVG(", "MIN(", "MAX(",
@@ -198,7 +198,7 @@ func requiresMergeEngine(sql string) bool {
 }
 
 // extractTableName extracts the table name from a SELECT query
-func extractTableName(sql string) string {
+func ExtractTableName(sql string) string {
 	upper := strings.ToUpper(sql)
 	fromIdx := strings.Index(upper, "FROM")
 	if fromIdx == -1 {

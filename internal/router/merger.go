@@ -354,6 +354,106 @@ func replaceTableWithTemp(sqlQuery, tempTable string) string {
 	return query
 }
 
+// MergeAndQueryFromMaps merges map-based results (e.g. from cross-index queries)
+// and re-executes the original query against the combined data.
+// Returns the merged rows and result column names.
+func (m *MergeEngine) MergeAndQueryFromMaps(ctx context.Context, originalQuery string, tableName string, columns []string, allRows []map[string]any) ([]map[string]any, []string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(allRows) == 0 {
+		return []map[string]any{}, columns, nil
+	}
+
+	// Infer types from first row
+	types := make([]string, len(columns))
+	for i, col := range columns {
+		types[i] = inferDuckDBType(allRows[0][col])
+	}
+
+	// Create unique temporary table
+	tableID := atomic.AddUint64(&m.counter, 1)
+	tempTable := fmt.Sprintf("temp_cross_%d", tableID)
+
+	var colDefs []string
+	for i, col := range columns {
+		colDefs = append(colDefs, fmt.Sprintf("%s %s", quoteIdentifier(col), types[i]))
+	}
+	createSQL := fmt.Sprintf("CREATE TEMP TABLE %s (%s)", tempTable, strings.Join(colDefs, ", "))
+
+	if _, err := m.db.ExecContext(ctx, createSQL); err != nil {
+		return nil, nil, fmt.Errorf("create temp table: %w", err)
+	}
+	defer m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", tempTable))
+
+	// Insert all rows
+	for _, row := range allRows {
+		placeholders := make([]string, len(columns))
+		values := make([]any, len(columns))
+		for i, col := range columns {
+			placeholders[i] = "?"
+			values[i] = row[col]
+		}
+		insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+			tempTable,
+			strings.Join(quoteIdentifiers(columns), ", "),
+			strings.Join(placeholders, ", "))
+
+		if _, err := m.db.ExecContext(ctx, insertSQL, values...); err != nil {
+			return nil, nil, fmt.Errorf("insert into temp table: %w", err)
+		}
+	}
+
+	// Replace table name and execute original query
+	mergeSQL := replaceTableWithTemp(originalQuery, tempTable)
+
+	rows, err := m.db.QueryContext(ctx, mergeSQL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("execute merge query: %w", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var merged []map[string]any
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, nil, err
+		}
+		row := make(map[string]any, len(cols))
+		for i, col := range cols {
+			row[col] = vals[i]
+		}
+		merged = append(merged, row)
+	}
+
+	return merged, cols, rows.Err()
+}
+
+// inferDuckDBType infers a DuckDB SQL type from a Go value.
+func inferDuckDBType(val any) string {
+	switch val.(type) {
+	case int, int8, int16, int32, int64:
+		return "BIGINT"
+	case uint, uint8, uint16, uint32, uint64:
+		return "BIGINT"
+	case float32, float64:
+		return "DOUBLE"
+	case bool:
+		return "BOOLEAN"
+	default:
+		return "VARCHAR"
+	}
+}
+
 func MergeResults(results [][]map[string]any) []map[string]any {
 	var merged []map[string]any
 	for _, r := range results {

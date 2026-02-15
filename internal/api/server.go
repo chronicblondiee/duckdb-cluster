@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/chronicblondiee/duckdb-cluster/internal/index"
 	"github.com/chronicblondiee/duckdb-cluster/internal/migration"
 	"github.com/chronicblondiee/duckdb-cluster/internal/rebalance"
+	"github.com/chronicblondiee/duckdb-cluster/internal/router"
 	"github.com/chronicblondiee/duckdb-cluster/internal/security"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -32,6 +34,7 @@ type Server struct {
 	schemaRegistry   *index.SchemaRegistry
 	aliasManager     *index.AliasManager
 	templateManager  *index.TemplateManager
+	mergeEngine      *router.MergeEngine
 }
 
 func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
@@ -81,6 +84,11 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	templateManager.LoadAll()
 	reg.SetTemplateManager(templateManager)
 
+	mergeEngine, err := router.NewMergeEngine()
+	if err != nil {
+		return nil, fmt.Errorf("create server merge engine: %w", err)
+	}
+
 	s := &Server{
 		Cluster:         c,
 		mux:             http.NewServeMux(),
@@ -93,6 +101,7 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 		schemaRegistry:  schemaReg,
 		aliasManager:    aliasManager,
 		templateManager: templateManager,
+		mergeEngine:     mergeEngine,
 	}
 
 	// Query endpoints
@@ -212,6 +221,10 @@ func (s *Server) Start(addr string) error {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		return err
+	}
+
+	if s.mergeEngine != nil {
+		s.mergeEngine.Close()
 	}
 
 	return s.Cluster.Shutdown()
