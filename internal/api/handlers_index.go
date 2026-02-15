@@ -60,9 +60,12 @@ func (s *Server) handleCreateIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply explicit mapping if provided
+	// Merge explicit mapping over any template-applied mapping
 	if req.Mappings != nil {
-		idx.Mapping = req.Mappings
+		for k, v := range req.Mappings.Fields {
+			idx.Mapping.Fields[k] = v
+		}
+		idx.Mapping.Dynamic = req.Mappings.Dynamic
 		s.registry.SaveCatalog()
 	}
 

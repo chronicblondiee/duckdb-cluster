@@ -43,6 +43,44 @@ type Mapping struct {
 	Dynamic bool                     `json:"dynamic"` // true = auto-add new fields
 }
 
+// Clone returns a deep copy of the mapping so the original is not mutated.
+func (m *Mapping) Clone() *Mapping {
+	if m == nil {
+		return nil
+	}
+	return &Mapping{
+		Fields:  cloneFields(m.Fields),
+		Dynamic: m.Dynamic,
+	}
+}
+
+// cloneFields deep-copies a field mapping map.
+func cloneFields(src map[string]*FieldMapping) map[string]*FieldMapping {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]*FieldMapping, len(src))
+	for k, v := range src {
+		dst[k] = cloneFieldMapping(v)
+	}
+	return dst
+}
+
+func cloneFieldMapping(fm *FieldMapping) *FieldMapping {
+	if fm == nil {
+		return nil
+	}
+	c := &FieldMapping{
+		Name:     fm.Name,
+		Type:     fm.Type,
+		Fields:   cloneFields(fm.Fields),
+		ItemType: cloneFieldMapping(fm.ItemType),
+		KeyType:  cloneFieldMapping(fm.KeyType),
+		ValType:  cloneFieldMapping(fm.ValType),
+	}
+	return c
+}
+
 // DefaultDocTable is the table name used for document-based ingestion.
 const DefaultDocTable = "_docs"
 

@@ -44,6 +44,8 @@ func (r *Registry) Create(name string, settings Settings) (*Index, error) {
 		return nil, err
 	}
 
+	var templateMapping *Mapping
+
 	// Apply matching template defaults before validation
 	if r.templateManager != nil {
 		matched := r.templateManager.Match(name)
@@ -54,6 +56,9 @@ func (r *Registry) Create(name string, settings Settings) (*Index, error) {
 			}
 			if settings.PartitionKeyField == "" {
 				settings.PartitionKeyField = tmpl.Settings.PartitionKeyField
+			}
+			if tmpl.Mapping != nil {
+				templateMapping = tmpl.Mapping.Clone()
 			}
 		}
 	}
@@ -73,6 +78,7 @@ func (r *Registry) Create(name string, settings Settings) (*Index, error) {
 		Name:     name,
 		Settings: settings,
 		State:    StateOpen,
+		Mapping:  templateMapping,
 	}
 
 	idx, err := NewIndex(r.baseDir, meta)

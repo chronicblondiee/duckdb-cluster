@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/chronicblondiee/duckdb-cluster/internal/index"
 )
 
 func TestCreateIndex(t *testing.T) {
@@ -358,5 +360,229 @@ func TestQueryWithIndex(t *testing.T) {
 	}
 	if len(resp.Rows) != 1 {
 		t.Errorf("expected 1 row, got %d", len(resp.Rows))
+	}
+}
+
+func TestTemplateMappingAutoApplied(t *testing.T) {
+	srv := setupServerWithInit(t)
+
+	// Create a template with a mapping and pattern "logs-*"
+	tmplBody := `{
+		"pattern": "logs-*",
+		"priority": 10,
+		"settings": {"shard_count": 2},
+		"mapping": {
+			"fields": {
+				"timestamp": {"name": "timestamp", "type": "TIMESTAMP"},
+				"level":     {"name": "level", "type": "VARCHAR"},
+				"message":   {"name": "message", "type": "VARCHAR"}
+			},
+			"dynamic": false
+		}
+	}`
+	req := httptest.NewRequest("PUT", "/templates/log-tmpl", bytes.NewBufferString(tmplBody))
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code/100 != 2 {
+		t.Fatalf("create template: expected 2xx, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Create an index matching the template pattern
+	req = httptest.NewRequest("PUT", "/indices/logs-2026", nil)
+	w = httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create index: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Get the index mapping and verify template fields were applied
+	req = httptest.NewRequest("GET", "/indices/logs-2026/_mapping", nil)
+	w = httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get mapping: expected 200, got %d", w.Code)
+	}
+
+	var mapping index.Mapping
+	json.NewDecoder(w.Body).Decode(&mapping)
+
+	for _, field := range []string{"timestamp", "level", "message"} {
+		if _, ok := mapping.Fields[field]; !ok {
+			t.Errorf("expected field %q from template mapping, not found", field)
+		}
+	}
+	if mapping.Dynamic {
+		t.Error("expected dynamic=false from template, got true")
+	}
+}
+
+func TestTemplateMappingWithExplicitOverride(t *testing.T) {
+	srv := setupServerWithInit(t)
+
+	// Create template with mapping
+	tmplBody := `{
+		"pattern": "metrics-*",
+		"priority": 5,
+		"settings": {"shard_count": 1},
+		"mapping": {
+			"fields": {
+				"host":  {"name": "host", "type": "VARCHAR"},
+				"value": {"name": "value", "type": "DOUBLE"},
+				"tag":   {"name": "tag", "type": "VARCHAR"}
+			},
+			"dynamic": true
+		}
+	}`
+	req := httptest.NewRequest("PUT", "/templates/metrics-tmpl", bytes.NewBufferString(tmplBody))
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code/100 != 2 {
+		t.Fatalf("create template: expected 2xx, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Create index with explicit mapping that overrides "value" and adds "region"
+	idxBody := `{
+		"mappings": {
+			"fields": {
+				"value":  {"name": "value", "type": "BIGINT"},
+				"region": {"name": "region", "type": "VARCHAR"}
+			},
+			"dynamic": false
+		}
+	}`
+	req = httptest.NewRequest("PUT", "/indices/metrics-cpu", bytes.NewBufferString(idxBody))
+	w = httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create index: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify merged mapping
+	req = httptest.NewRequest("GET", "/indices/metrics-cpu/_mapping", nil)
+	w = httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+
+	var mapping index.Mapping
+	json.NewDecoder(w.Body).Decode(&mapping)
+
+	// Template-only field preserved
+	if _, ok := mapping.Fields["host"]; !ok {
+		t.Error("expected template field 'host' preserved")
+	}
+	if _, ok := mapping.Fields["tag"]; !ok {
+		t.Error("expected template field 'tag' preserved")
+	}
+	// Explicit field overrides template
+	if f, ok := mapping.Fields["value"]; !ok {
+		t.Error("expected field 'value'")
+	} else if f.Type != "BIGINT" {
+		t.Errorf("expected 'value' type BIGINT (explicit override), got %s", f.Type)
+	}
+	// Explicit-only field added
+	if _, ok := mapping.Fields["region"]; !ok {
+		t.Error("expected explicit field 'region' added")
+	}
+	// Dynamic overridden to false
+	if mapping.Dynamic {
+		t.Error("expected dynamic=false from explicit override, got true")
+	}
+}
+
+func TestNoTemplateMatchDefaultMapping(t *testing.T) {
+	srv := setupServerWithInit(t)
+
+	// Create template that won't match
+	tmplBody := `{
+		"pattern": "logs-*",
+		"priority": 1,
+		"settings": {"shard_count": 2},
+		"mapping": {
+			"fields": {"level": {"name": "level", "type": "VARCHAR"}},
+			"dynamic": false
+		}
+	}`
+	req := httptest.NewRequest("PUT", "/templates/log-tmpl", bytes.NewBufferString(tmplBody))
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code/100 != 2 {
+		t.Fatalf("create template: expected 2xx, got %d", w.Code)
+	}
+
+	// Create index that does NOT match "logs-*"
+	req = httptest.NewRequest("PUT", "/indices/events-2026", bytes.NewBufferString(`{"settings":{"shard_count":1}}`))
+	w = httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create index: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify default empty dynamic mapping
+	req = httptest.NewRequest("GET", "/indices/events-2026/_mapping", nil)
+	w = httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+
+	var mapping index.Mapping
+	json.NewDecoder(w.Body).Decode(&mapping)
+
+	if len(mapping.Fields) != 0 {
+		t.Errorf("expected empty fields for non-matching index, got %d fields", len(mapping.Fields))
+	}
+	if !mapping.Dynamic {
+		t.Error("expected dynamic=true for default mapping")
+	}
+}
+
+func TestTemplateMappingCloneIsolation(t *testing.T) {
+	srv := setupServerWithInit(t)
+
+	// Create template with mapping
+	tmplBody := `{
+		"pattern": "iso-*",
+		"priority": 1,
+		"settings": {"shard_count": 1},
+		"mapping": {
+			"fields": {"name": {"name": "name", "type": "VARCHAR"}},
+			"dynamic": true
+		}
+	}`
+	req := httptest.NewRequest("PUT", "/templates/iso-tmpl", bytes.NewBufferString(tmplBody))
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code/100 != 2 {
+		t.Fatalf("create template: expected 2xx, got %d", w.Code)
+	}
+
+	// Create two indices matching the template
+	for _, name := range []string{"iso-a", "iso-b"} {
+		req = httptest.NewRequest("PUT", "/indices/"+name, nil)
+		w = httptest.NewRecorder()
+		srv.mux.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create %s: expected 201, got %d: %s", name, w.Code, w.Body.String())
+		}
+	}
+
+	// Modify iso-a's mapping by adding a field via PUT _mapping
+	newMapping := `{"fields":{"name":{"name":"name","type":"VARCHAR"},"extra":{"name":"extra","type":"BIGINT"}},"dynamic":true}`
+	req = httptest.NewRequest("PUT", "/indices/iso-a/_mapping", bytes.NewBufferString(newMapping))
+	w = httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("put mapping iso-a: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify iso-b still has only the original template field
+	req = httptest.NewRequest("GET", "/indices/iso-b/_mapping", nil)
+	w = httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+
+	var mapping index.Mapping
+	json.NewDecoder(w.Body).Decode(&mapping)
+
+	if _, ok := mapping.Fields["extra"]; ok {
+		t.Error("iso-b should not have 'extra' field — template mapping was not properly cloned")
+	}
+	if _, ok := mapping.Fields["name"]; !ok {
+		t.Error("iso-b should have 'name' field from template")
 	}
 }
