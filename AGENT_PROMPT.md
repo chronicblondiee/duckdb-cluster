@@ -40,10 +40,11 @@ When making changes, reason about: shard consistency (DDL must hit all shards), 
 ```
 duckdb-cluster/
 ├── cmd/duckdb-cluster/
-│   ├── main.go                     CLI: init, start, status, version, migrate, backup, rebalance, index, alias, template
+│   ├── main.go                     CLI: init, start, status, version, migrate, backup, rebalance, index, alias, template, ism
 │   ├── cmd_index.go                CLI index subcommands (list, create, delete, get, close, open)
 │   ├── cmd_alias.go                CLI alias subcommands (list, create, delete, get)
-│   └── cmd_template.go             CLI template subcommands (list, create, delete, get)
+│   ├── cmd_template.go             CLI template subcommands (list, create, delete, get)
+│   └── cmd_ism.go                  CLI ISM subcommands (list, create, delete, get, status, attach, detach, retry)
 ├── internal/
 │   ├── shard/
 │   │   ├── shard.go                Single DuckDB instance wrapper
@@ -64,6 +65,7 @@ duckdb-cluster/
 │   │   ├── handlers_alias.go       Alias HTTP handlers
 │   │   ├── handlers_template.go    Template HTTP handlers
 │   │   ├── handlers_cross_index.go Cross-index query fan-out + merge
+│   │   ├── handlers_ism.go         ISM policy CRUD, attach/detach, status, retry
 │   │   ├── handlers_auth.go        Authentication endpoints
 │   │   ├── handlers_backup.go      Backup/restore endpoints
 │   │   ├── handlers_migration.go   Migration status/run endpoints
@@ -77,6 +79,13 @@ duckdb-cluster/
 │   │   ├── document.go             JSON/Protobuf document ingestion with schema evolution
 │   │   ├── schema_registry.go      Protobuf schema management
 │   │   └── validation.go           Index name + shard count validation
+│   ├── ism/
+│   │   ├── policy.go               ISM policy data model (states, actions, transitions)
+│   │   ├── state.go                Per-index ISM state tracking
+│   │   ├── validation.go           Policy structural validation
+│   │   ├── manager.go              Policy CRUD, persistence, auto-attach
+│   │   ├── runner.go               Background executor (actions, transitions, retries)
+│   │   └── cron.go                 Cron expression matching
 │   ├── security/
 │   │   ├── auth.go                 JWT-style authentication
 │   │   ├── authz.go                RBAC authorization
@@ -156,6 +165,7 @@ duckdb-cluster/
   - `go.opentelemetry.io/otel` — distributed tracing
   - `google.golang.org/grpc` + `google.golang.org/protobuf` — inter-node gRPC
   - `gopkg.in/yaml.v3` — YAML config parsing
+  - `github.com/robfig/cron/v3` — cron expression parsing (ISM)
 - **No frameworks.** HTTP via `net/http`, CLI via `flag`, logging via `log/slog`.
 - **No over-engineering.** Don't add abstractions, interfaces, or config options unless the task specifically calls for them.
 - **Two modes:** Monolithic (single-node, all-in-one) and Distributed (modular with separate ingester/querier/distributor/frontend roles).
@@ -338,6 +348,16 @@ REBALANCE:    POST /admin/rebalance/run
 | GET | `/templates/{name}` | — | Get template |
 | DELETE | `/templates/{name}` | — | Delete template |
 | GET | `/templates` | — | List all templates |
+| **ISM** | | | |
+| PUT | `/ism/policies/{name}` | `{policy JSON/YAML}` | Create/update ISM policy |
+| GET | `/ism/policies/{name}` | — | Get ISM policy |
+| DELETE | `/ism/policies/{name}` | — | Delete ISM policy |
+| GET | `/ism/policies` | — | List all ISM policies |
+| POST | `/ism/attach/{index}` | `{"policy": "name"}` | Attach ISM policy to index |
+| POST | `/ism/detach/{index}` | — | Detach ISM policy from index |
+| GET | `/ism/status/{index}` | — | Get ISM status for index |
+| GET | `/ism/status` | — | Get ISM status for all indices |
+| POST | `/ism/retry/{index}` | — | Retry failed ISM action |
 | **Rebalance** | | | |
 | POST | `/admin/rebalance/plan` | — | Generate rebalance plan |
 | POST | `/admin/rebalance/run` | — | Execute rebalance |

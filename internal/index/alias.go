@@ -58,6 +58,18 @@ func (am *AliasManager) Get(name string) (*Alias, error) {
 	return a, nil
 }
 
+// GetIndices returns the index names for an alias, or an error if not found.
+func (am *AliasManager) GetIndices(name string) ([]string, error) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+
+	a, ok := am.aliases[name]
+	if !ok {
+		return nil, fmt.Errorf("alias %q not found", name)
+	}
+	return a.Indices, nil
+}
+
 // Delete removes an alias.
 func (am *AliasManager) Delete(name string) error {
 	am.mu.Lock()

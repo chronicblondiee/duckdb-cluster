@@ -28,11 +28,12 @@ type Settings struct {
 
 // Metadata holds persisted information about an index.
 type Metadata struct {
-	Name      string   `json:"name"`
-	Settings  Settings `json:"settings"`
-	State     State    `json:"state"`
+	Name      string    `json:"name"`
+	Settings  Settings  `json:"settings"`
+	State     State     `json:"state"`
 	CreatedAt time.Time `json:"created_at"`
-	Mapping   *Mapping `json:"mapping,omitempty"`
+	Mapping   *Mapping  `json:"mapping,omitempty"`
+	ReadOnly  bool      `json:"read_only,omitempty"`
 }
 
 // Index is a named logical namespace owning N shards.

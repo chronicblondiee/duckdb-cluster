@@ -41,9 +41,10 @@ func setupServer(t *testing.T) *Server {
 	
 	// Create config with security disabled for tests
 	cfg := config.Default()
+	cfg.Common.DataDir = dir
 	cfg.Security.Authentication.Enabled = false
 	cfg.Security.RateLimit.Enabled = false
-	
+
 	srv, err := NewServer(c, cfg)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -74,9 +75,10 @@ func setupServerWithInit(t *testing.T) *Server {
 	
 	// Create config with security disabled for tests
 	cfg := config.Default()
+	cfg.Common.DataDir = dir
 	cfg.Security.Authentication.Enabled = false
 	cfg.Security.RateLimit.Enabled = false
-	
+
 	srv, err := NewServer(c2, cfg)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)

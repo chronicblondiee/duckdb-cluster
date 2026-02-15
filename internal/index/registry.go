@@ -23,6 +23,7 @@ type Registry struct {
 	indices         map[string]*Index
 	baseDir         string // root data dir (e.g., ./data)
 	templateManager *TemplateManager
+	onIndexCreated  func(indexName string)
 }
 
 // NewRegistry creates a new empty registry.
@@ -36,6 +37,24 @@ func NewRegistry(baseDir string) *Registry {
 // SetTemplateManager sets the template manager for auto-applying templates on index creation.
 func (r *Registry) SetTemplateManager(tm *TemplateManager) {
 	r.templateManager = tm
+}
+
+// SetOnIndexCreated sets a callback invoked after a new index is successfully created.
+func (r *Registry) SetOnIndexCreated(fn func(indexName string)) {
+	r.onIndexCreated = fn
+}
+
+// SetReadOnly sets the read-only flag on an index.
+func (r *Registry) SetReadOnly(name string, readOnly bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	idx, ok := r.indices[name]
+	if !ok {
+		return fmt.Errorf("index %q not found", name)
+	}
+	idx.Meta.ReadOnly = readOnly
+	return r.saveCatalogLocked()
 }
 
 // Create creates a new index with the given name and settings.
@@ -95,6 +114,11 @@ func (r *Registry) Create(name string, settings Settings) (*Index, error) {
 	}
 
 	slog.Info("index created", "name", name, "shards", settings.ShardCount)
+
+	if r.onIndexCreated != nil {
+		r.onIndexCreated(name)
+	}
+
 	return idx, nil
 }
 

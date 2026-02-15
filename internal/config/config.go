@@ -51,6 +51,21 @@ type Config struct {
 	
 	// Backup configuration
 	Backup BackupConfig `yaml:"backup"`
+
+	// ISM (Index State Management) configuration
+	ISM ISMConfig `yaml:"ism"`
+}
+
+// ISMConfig configures Index State Management.
+type ISMConfig struct {
+	// Enabled controls whether the ISM runner is active
+	Enabled bool `yaml:"enabled"`
+
+	// RunInterval is how often the ISM runner evaluates managed indices
+	RunInterval time.Duration `yaml:"run_interval"`
+
+	// PolicyDir is an optional directory to load .yaml policy files from on startup
+	PolicyDir string `yaml:"policy_dir"`
 }
 
 // CommonConfig contains settings shared across components
@@ -496,6 +511,11 @@ func Default() *Config {
 			Compression:      true,
 			Retention:        7, // Keep last 7 backups
 			ScheduleInterval: 0, // Disabled by default
+		},
+		ISM: ISMConfig{
+			Enabled:     false,
+			RunInterval: 5 * time.Minute,
+			PolicyDir:   "",
 		},
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/chronicblondiee/duckdb-cluster/internal/cluster"
 	"github.com/chronicblondiee/duckdb-cluster/internal/config"
 	"github.com/chronicblondiee/duckdb-cluster/internal/index"
+	"github.com/chronicblondiee/duckdb-cluster/internal/ism"
 	"github.com/chronicblondiee/duckdb-cluster/internal/migration"
 	"github.com/chronicblondiee/duckdb-cluster/internal/rebalance"
 	"github.com/chronicblondiee/duckdb-cluster/internal/router"
@@ -35,6 +36,8 @@ type Server struct {
 	aliasManager     *index.AliasManager
 	templateManager  *index.TemplateManager
 	mergeEngine      *router.MergeEngine
+	ismManager       *ism.Manager
+	ismRunner        *ism.Runner
 }
 
 func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
@@ -89,6 +92,33 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("create server merge engine: %w", err)
 	}
 
+	// Initialize ISM manager
+	ismMgr := ism.NewManager(cfg.Common.DataDir, reg)
+	if err := ismMgr.LoadAll(); err != nil {
+		slog.Warn("ISM: failed to load state", "error", err)
+	}
+	if cfg.ISM.PolicyDir != "" {
+		if err := ismMgr.LoadPolicyDir(cfg.ISM.PolicyDir); err != nil {
+			slog.Warn("ISM: failed to load policy dir", "error", err)
+		}
+	}
+
+	// Wire ISM auto-attach to index creation
+	reg.SetOnIndexCreated(func(indexName string) {
+		ismMgr.AutoAttach(indexName)
+	})
+
+	// Create ISM runner (started later if enabled)
+	var ismRunner *ism.Runner
+	if cfg.ISM.Enabled {
+		interval := cfg.ISM.RunInterval
+		if interval <= 0 {
+			interval = 5 * time.Minute
+		}
+		ismRunner = ism.NewRunner(ismMgr, reg, interval)
+		ismRunner.SetAliasUpdater(aliasManager)
+	}
+
 	s := &Server{
 		Cluster:         c,
 		mux:             http.NewServeMux(),
@@ -102,6 +132,8 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 		aliasManager:    aliasManager,
 		templateManager: templateManager,
 		mergeEngine:     mergeEngine,
+		ismManager:      ismMgr,
+		ismRunner:       ismRunner,
 	}
 
 	// Query endpoints
@@ -171,6 +203,17 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	s.mux.HandleFunc("DELETE /templates/{name}", s.handleDeleteTemplate)
 	s.mux.HandleFunc("GET /templates", s.handleListTemplates)
 
+	// ISM endpoints
+	s.mux.HandleFunc("PUT /ism/policies/{name}", s.handleCreateISMPolicy)
+	s.mux.HandleFunc("GET /ism/policies/{name}", s.handleGetISMPolicy)
+	s.mux.HandleFunc("DELETE /ism/policies/{name}", s.handleDeleteISMPolicy)
+	s.mux.HandleFunc("GET /ism/policies", s.handleListISMPolicies)
+	s.mux.HandleFunc("POST /ism/attach/{index}", s.handleAttachISMPolicy)
+	s.mux.HandleFunc("POST /ism/detach/{index}", s.handleDetachISMPolicy)
+	s.mux.HandleFunc("GET /ism/status/{index}", s.handleISMStatus)
+	s.mux.HandleFunc("GET /ism/status", s.handleISMStatusAll)
+	s.mux.HandleFunc("POST /ism/retry/{index}", s.handleISMRetry)
+
 	// Health endpoint
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
@@ -205,6 +248,11 @@ func (s *Server) Start(addr string) error {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
+	// Start ISM runner if enabled
+	if s.ismRunner != nil {
+		s.ismRunner.Start(context.Background())
+	}
+
 	go func() {
 		slog.Info("HTTP server listening", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -221,6 +269,11 @@ func (s *Server) Start(addr string) error {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		return err
+	}
+
+	// Stop ISM runner
+	if s.ismRunner != nil {
+		s.ismRunner.Stop()
 	}
 
 	if s.mergeEngine != nil {
