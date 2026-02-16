@@ -17,6 +17,7 @@ import (
 	"github.com/chronicblondiee/duckdb-cluster/internal/ism"
 	"github.com/chronicblondiee/duckdb-cluster/internal/migration"
 	"github.com/chronicblondiee/duckdb-cluster/internal/rebalance"
+	"github.com/chronicblondiee/duckdb-cluster/internal/reliability"
 	"github.com/chronicblondiee/duckdb-cluster/internal/router"
 	"github.com/chronicblondiee/duckdb-cluster/internal/security"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -28,6 +29,7 @@ type Server struct {
 	authenticator    *security.Authenticator
 	authorizer       *security.Authorizer
 	rateLimiter      *security.RateLimiter
+	backpressure     *reliability.BackpressureManager
 	backupManager    *backup.BackupManager
 	migrationManager *migration.Manager
 	rebalancer       *rebalance.Rebalancer
@@ -92,6 +94,15 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("create server merge engine: %w", err)
 	}
 
+	// Initialize backpressure manager
+	bpm := reliability.NewBackpressureManager(reliability.BackpressureConfig{
+		Enabled:             cfg.Reliability.Backpressure.Enabled,
+		MaxConcurrentWrites: cfg.Reliability.Backpressure.MaxConcurrentWrites,
+		MaxConcurrentReads:  cfg.Reliability.Backpressure.MaxConcurrentReads,
+		MaxQueueSize:        cfg.Reliability.Backpressure.MaxQueueSize,
+		QueueTimeout:        cfg.Reliability.Backpressure.QueueTimeout,
+	})
+
 	// Initialize ISM manager
 	ismMgr := ism.NewManager(cfg.Common.DataDir, reg)
 	if err := ismMgr.LoadAll(); err != nil {
@@ -125,6 +136,7 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 		authenticator:   authenticator,
 		authorizer:      authorizer,
 		rateLimiter:     rateLimiter,
+		backpressure:    bpm,
 		backupManager:   backupManager,
 		rebalancer:      rebalance.NewRebalancer(c.Manager, slog.Default()),
 		registry:        reg,
@@ -223,15 +235,50 @@ func NewServer(c *cluster.Cluster, cfg *config.Config) (*Server, error) {
 	return s, nil
 }
 
-// Handler returns the HTTP handler with security middleware
+// Handler returns the HTTP handler with security and reliability middleware
 func (s *Server) Handler() http.Handler {
 	handler := security.ChainHTTPMiddleware(
 		security.HTTPRateLimitMiddleware(s.rateLimiter),
+		s.backpressureMiddleware(),
 		security.HTTPAuthMiddleware(s.authenticator),
 		security.HTTPAuthzMiddleware(s.authorizer),
 	)(s.mux)
 
 	return handler
+}
+
+// backpressureMiddleware returns HTTP middleware that enforces concurrency limits.
+// Write requests (POST/PUT/DELETE) use write slots; GET requests use read slots.
+// Returns 503 Service Unavailable when backpressure rejects a request.
+func (s *Server) backpressureMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip backpressure for health/metrics
+			if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			var release func()
+			var err error
+
+			switch r.Method {
+			case http.MethodGet:
+				release, err = s.backpressure.AcquireRead(r.Context())
+			default:
+				release, err = s.backpressure.AcquireWrite(r.Context())
+			}
+
+			if err != nil {
+				slog.Warn("backpressure rejected request", "method", r.Method, "path", r.URL.Path, "error", err)
+				http.Error(w, "Service Unavailable: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+			defer release()
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // SetMigrationManager sets the migration manager for version/migrate endpoints.
