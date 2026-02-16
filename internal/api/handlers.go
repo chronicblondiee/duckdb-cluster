@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/chronicblondiee/duckdb-cluster/internal/rebalance"
+	"github.com/chronicblondiee/duckdb-cluster/internal/router"
 )
 
 type queryRequest struct {
@@ -604,10 +604,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 // isWriteSQL returns true if the SQL statement is a write operation.
 func isWriteSQL(sql string) bool {
-	kw := strings.ToUpper(strings.TrimSpace(sql))
-	return strings.HasPrefix(kw, "INSERT") ||
-		strings.HasPrefix(kw, "UPDATE") ||
-		strings.HasPrefix(kw, "DELETE")
+	return router.IsWriteSQL(sql)
 }
 
 // applyPagination applies offset and limit to result rows
@@ -634,4 +631,3 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
 }
-

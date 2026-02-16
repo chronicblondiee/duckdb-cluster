@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 )
@@ -59,6 +60,11 @@ func (r *Router) Route(ctx context.Context, sqlStr string, partitionKey string) 
 	default:
 		return nil, fmt.Errorf("unsupported SQL statement: %s", keyword)
 	}
+}
+
+// IsWriteSQL reports whether the provided SQL statement is a write operation.
+func IsWriteSQL(sql string) bool {
+	return isWriteKeyword(firstKeyword(sql))
 }
 
 func (r *Router) handleDDL(ctx context.Context, sqlStr string) (*QueryResult, error) {
@@ -216,11 +222,177 @@ func ExtractTableName(sql string) string {
 	return ""
 }
 
+var statementKeywords = map[string]struct{}{
+	"CREATE": {},
+	"DROP":   {},
+	"ALTER":  {},
+	"INSERT": {},
+	"UPDATE": {},
+	"DELETE": {},
+	"SELECT": {},
+}
+
 func firstKeyword(sql string) string {
-	trimmed := strings.TrimSpace(sql)
-	end := strings.IndexAny(trimmed, " \t\n\r")
-	if end == -1 {
-		return strings.ToUpper(trimmed)
+	scanner := &sqlTokenScanner{input: sql}
+	for {
+		token, depth := scanner.nextToken()
+		if token == "" {
+			return ""
+		}
+		upper := strings.ToUpper(token)
+		// Skip keywords inside sub-expressions, especially CTE bodies.
+		// The "WITH ... AS (...)" form can contain SELECT/INSERT/UPDATE tokens in body;
+		// only top-level tokens are eligible as routing keys.
+		if depth == 0 {
+			if _, ok := statementKeywords[upper]; ok {
+				return upper
+			}
+		}
 	}
-	return strings.ToUpper(trimmed[:end])
+}
+
+func isWriteKeyword(keyword string) bool {
+	switch keyword {
+	case "INSERT", "UPDATE", "DELETE":
+		return true
+	default:
+		return false
+	}
+}
+
+type sqlTokenScanner struct {
+	input string
+	pos   int
+	depth int
+}
+
+func (s *sqlTokenScanner) nextToken() (string, int) {
+	for s.pos < len(s.input) {
+		ch := s.input[s.pos]
+
+		switch {
+		case isWhitespace(ch):
+			s.pos++
+			continue
+		case isLineCommentStart(s.input, s.pos):
+			s.pos += 2
+			for s.pos < len(s.input) {
+				if s.input[s.pos] == '\n' {
+					s.pos++
+					break
+				}
+				s.pos++
+			}
+			continue
+		case isBlockCommentStart(s.input, s.pos):
+			s.pos += 2
+			for s.pos < len(s.input)-1 {
+				if s.input[s.pos] == '*' && s.input[s.pos+1] == '/' {
+					s.pos += 2
+					break
+				}
+				s.pos++
+			}
+			continue
+		case ch == '(':
+			s.depth++
+			s.pos++
+			continue
+		case ch == ')':
+			if s.depth > 0 {
+				s.depth--
+			}
+			s.pos++
+			continue
+		case ch == ',' || ch == ';':
+			s.pos++
+			continue
+		case ch == '\'':
+			s.skipSingleQuotedString()
+			continue
+		case ch == '"':
+			s.skipDoubleQuotedString()
+			continue
+		case ch == '`':
+			s.skipBacktickQuotedString()
+			continue
+		case isIdentStart(ch):
+			start := s.pos
+			s.pos++
+			for s.pos < len(s.input) && isIdentPart(s.input[s.pos]) {
+				s.pos++
+			}
+			return s.input[start:s.pos], s.depth
+		default:
+			s.pos++
+		}
+	}
+	return "", s.depth
+}
+
+func (s *sqlTokenScanner) skipSingleQuotedString() {
+	s.pos++
+	for s.pos < len(s.input) {
+		if s.input[s.pos] == '\'' {
+			if s.pos+1 < len(s.input) && s.input[s.pos+1] == '\'' {
+				s.pos += 2
+				continue
+			}
+			s.pos++
+			return
+		}
+		s.pos++
+	}
+}
+
+func (s *sqlTokenScanner) skipDoubleQuotedString() {
+	s.pos++
+	for s.pos < len(s.input) {
+		if s.input[s.pos] == '"' {
+			if s.pos+1 < len(s.input) && s.input[s.pos+1] == '"' {
+				s.pos += 2
+				continue
+			}
+			s.pos++
+			return
+		}
+		s.pos++
+	}
+}
+
+func (s *sqlTokenScanner) skipBacktickQuotedString() {
+	s.pos++
+	for s.pos < len(s.input) {
+		if s.input[s.pos] == '`' {
+			s.pos++
+			return
+		}
+		s.pos++
+	}
+}
+
+func isWhitespace(ch byte) bool {
+	return unicode.IsSpace(rune(ch))
+}
+
+func isLineCommentStart(s string, pos int) bool {
+	return pos+1 < len(s) && s[pos] == '-' && s[pos+1] == '-'
+}
+
+func isBlockCommentStart(s string, pos int) bool {
+	return pos+1 < len(s) && s[pos] == '/' && s[pos+1] == '*'
+}
+
+func isIdentStart(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		ch == '_' ||
+		ch == '@' ||
+		ch == '#'
+}
+
+func isIdentPart(ch byte) bool {
+	return isIdentStart(ch) ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '.'
 }
