@@ -441,6 +441,111 @@ func TestMergeDistinct(t *testing.T) {
 	}
 }
 
+// TestFirstKeyword tests SQL keyword extraction with comments, CTEs, and edge cases
+func TestFirstKeyword(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		expected string
+	}{
+		// Basic cases
+		{"simple select", "SELECT * FROM t", "SELECT"},
+		{"simple insert", "INSERT INTO t VALUES (1)", "INSERT"},
+		{"simple update", "UPDATE t SET x = 1", "UPDATE"},
+		{"simple delete", "DELETE FROM t", "DELETE"},
+		{"simple create", "CREATE TABLE t (id INT)", "CREATE"},
+		{"simple drop", "DROP TABLE t", "DROP"},
+		{"simple alter", "ALTER TABLE t ADD COLUMN x INT", "ALTER"},
+		{"lowercase", "select * from t", "SELECT"},
+		{"mixed case", "SeLeCt * from t", "SELECT"},
+
+		// Whitespace
+		{"leading spaces", "   SELECT * FROM t", "SELECT"},
+		{"leading tabs", "\t\tSELECT * FROM t", "SELECT"},
+		{"leading newlines", "\n\nSELECT * FROM t", "SELECT"},
+		{"leading mixed whitespace", "  \t\n  INSERT INTO t VALUES (1)", "INSERT"},
+
+		// Line comments
+		{"line comment before select", "-- this is a comment\nSELECT * FROM t", "SELECT"},
+		{"line comment before insert", "-- write op\nINSERT INTO t VALUES (1)", "INSERT"},
+		{"multiple line comments", "-- comment 1\n-- comment 2\nSELECT * FROM t", "SELECT"},
+		{"line comment no newline", "-- comment", ""},
+
+		// Block comments
+		{"block comment before select", "/* comment */ SELECT * FROM t", "SELECT"},
+		{"block comment before insert", "/* write */ INSERT INTO t VALUES (1)", "INSERT"},
+		{"multi-line block comment", "/* line1\nline2\nline3 */ DELETE FROM t", "DELETE"},
+		{"nested-looking block comment", "/* a /* b */ SELECT * FROM t", "SELECT"},
+		{"unterminated block comment", "/* never closed", ""},
+
+		// CTE (WITH ... AS)
+		{"CTE with select", "WITH cte AS (SELECT 1) SELECT * FROM cte", "SELECT"},
+		{"CTE with insert", "WITH cte AS (SELECT 1) INSERT INTO t SELECT * FROM cte", "INSERT"},
+		{"CTE with nested select", "WITH a AS (SELECT * FROM x), b AS (SELECT * FROM y) DELETE FROM t", "DELETE"},
+
+		// Parenthesized subexpressions
+		{"subquery", "(SELECT 1) SELECT * FROM t", "SELECT"},
+
+		// Quoted strings containing keywords
+		{"keyword in single quotes", "SELECT 'INSERT INTO' FROM t", "SELECT"},
+		{"keyword in double quotes", `SELECT "DELETE" FROM t`, "SELECT"},
+		{"keyword in backticks", "SELECT `UPDATE` FROM t", "SELECT"},
+		{"escaped single quote", "SELECT 'it''s INSERT' FROM t", "SELECT"},
+
+		// Edge cases
+		{"empty string", "", ""},
+		{"whitespace only", "   \t\n  ", ""},
+		{"comment only", "-- just a comment\n", ""},
+		{"semicolon prefix", ";SELECT * FROM t", "SELECT"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := firstKeyword(tt.sql)
+			if got != tt.expected {
+				t.Errorf("firstKeyword(%q) = %q, want %q", tt.sql, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestIsWriteSQL tests the exported write detection function
+func TestIsWriteSQL(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		expected bool
+	}{
+		// Write operations
+		{"insert", "INSERT INTO t VALUES (1)", true},
+		{"update", "UPDATE t SET x = 1", true},
+		{"delete", "DELETE FROM t", true},
+		{"insert with comment", "-- comment\nINSERT INTO t VALUES (1)", true},
+		{"insert with block comment", "/* comment */ INSERT INTO t VALUES (1)", true},
+		{"CTE insert", "WITH cte AS (SELECT 1) INSERT INTO t SELECT * FROM cte", true},
+
+		// Non-write operations
+		{"select", "SELECT * FROM t", false},
+		{"create", "CREATE TABLE t (id INT)", false},
+		{"drop", "DROP TABLE t", false},
+		{"alter", "ALTER TABLE t ADD COLUMN x INT", false},
+		{"empty", "", false},
+
+		// Tricky: SELECT with write keywords in strings/comments
+		{"select with insert in string", "SELECT 'INSERT' FROM t", false},
+		{"select with delete in comment", "-- DELETE\nSELECT * FROM t", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsWriteSQL(tt.sql)
+			if got != tt.expected {
+				t.Errorf("IsWriteSQL(%q) = %v, want %v", tt.sql, got, tt.expected)
+			}
+		})
+	}
+}
+
 // Helper functions for type conversions
 func toInt64(v any) int64 {
 	switch val := v.(type) {

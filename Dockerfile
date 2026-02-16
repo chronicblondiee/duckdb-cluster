@@ -1,5 +1,4 @@
-ARG GO_IMAGE_TAG=1.23
-FROM golang:${GO_IMAGE_TAG}-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 WORKDIR /src
 

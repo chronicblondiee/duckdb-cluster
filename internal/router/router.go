@@ -286,12 +286,16 @@ func (s *sqlTokenScanner) nextToken() (string, int) {
 			continue
 		case isBlockCommentStart(s.input, s.pos):
 			s.pos += 2
-			for s.pos < len(s.input)-1 {
+			for s.pos+1 < len(s.input) {
 				if s.input[s.pos] == '*' && s.input[s.pos+1] == '/' {
 					s.pos += 2
 					break
 				}
 				s.pos++
+			}
+			// If unterminated, consume remaining input
+			if s.pos < len(s.input) && !(s.pos >= 2 && s.input[s.pos-2] == '*' && s.input[s.pos-1] == '/') {
+				s.pos = len(s.input)
 			}
 			continue
 		case ch == '(':

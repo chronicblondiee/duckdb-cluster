@@ -1,6 +1,6 @@
 module github.com/chronicblondiee/duckdb-cluster
 
-go 1.23
+go 1.25.7
 
 require (
 	github.com/duckdb/duckdb-go/v2 v2.5.5
