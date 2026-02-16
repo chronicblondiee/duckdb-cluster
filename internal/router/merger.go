@@ -5,49 +5,41 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"sync"
-	"sync/atomic"
 
 	"github.com/chronicblondiee/duckdb-cluster/internal/shard"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
-// MergeEngine uses an in-memory DuckDB to properly merge results
-type MergeEngine struct {
-	db      *sql.DB
-	mu      sync.Mutex
-	counter uint64
+// MergeEngine merges query results from multiple shards using DuckDB.
+// Each merge operation opens its own in-memory DuckDB to avoid contention.
+type MergeEngine struct{}
+
+// NewMergeEngine creates a new merge engine.
+func NewMergeEngine() (*MergeEngine, error) {
+	return &MergeEngine{}, nil
 }
 
-// NewMergeEngine creates a new merge engine with an in-memory DuckDB instance
-func NewMergeEngine() (*MergeEngine, error) {
+// Close is a no-op since each operation manages its own database.
+func (m *MergeEngine) Close() error {
+	return nil
+}
+
+// openMergeDB opens a fresh in-memory DuckDB for a single merge operation.
+func openMergeDB() (*sql.DB, error) {
 	db, err := sql.Open("duckdb", ":memory:")
 	if err != nil {
-		return nil, fmt.Errorf("create merge engine: %w", err)
+		return nil, fmt.Errorf("create merge db: %w", err)
 	}
-	return &MergeEngine{db: db}, nil
-}
-
-// Close closes the merge engine database
-func (m *MergeEngine) Close() error {
-	if m.db != nil {
-		return m.db.Close()
-	}
-	return nil
+	return db, nil
 }
 
 // Merge takes results from multiple shards and properly merges them by:
 // 1. Creating a temporary table with the result schema
-// 2. Inserting all shard results
+// 2. Inserting all shard results in batches
 // 3. Re-executing the original SQL against the merged data
 // 4. Returning the correctly merged results
 func (m *MergeEngine) Merge(ctx context.Context, sqlQuery string, results []*shard.QueryResultSet) ([]map[string]any, error) {
-	// Lock for concurrent access to the merge engine
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	
-	// If no results, return empty
 	if len(results) == 0 {
 		return []map[string]any{}, nil
 	}
@@ -64,16 +56,9 @@ func (m *MergeEngine) Merge(ctx context.Context, sqlQuery string, results []*sha
 		return []map[string]any{}, nil
 	}
 
-	// Check if this is an aggregation query by looking at the results
-	// Aggregations return different column names than the source tables
-	// For now, use simple concatenation for aggregations as a fallback
-	// This is a known limitation that will be fixed in a future iteration
-	isAggregation := containsAggregation(sqlQuery)
-	
-	if isAggregation {
-		// For aggregations, we just concatenate the results
-		// This is a limitation: aggregations won't be fully correct across shards
-		// A proper fix requires query rewriting which is complex
+	// For aggregations, just concatenate — the caller (handleRead)
+	// uses MergeAndQuery for proper re-aggregation when needed.
+	if containsAggregation(sqlQuery) {
 		var merged []map[string]any
 		for _, rs := range results {
 			merged = append(merged, rs.Rows...)
@@ -81,102 +66,45 @@ func (m *MergeEngine) Merge(ctx context.Context, sqlQuery string, results []*sha
 		return merged, nil
 	}
 
-	// Create unique temporary table name using atomic counter
-	tableID := atomic.AddUint64(&m.counter, 1)
-	tempTable := fmt.Sprintf("temp_merge_%d", tableID)
+	db, err := openMergeDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	tempTable := "merge_data"
 
 	// Build CREATE TABLE statement
 	var colDefs []string
 	for i, col := range schema.Columns {
 		typeName := schema.Types[i]
-		// Map DuckDB types to proper SQL types
 		sqlType := mapDuckDBType(typeName)
 		colDefs = append(colDefs, fmt.Sprintf("%s %s", quoteIdentifier(col), sqlType))
 	}
-	createSQL := fmt.Sprintf("CREATE TEMP TABLE %s (%s)", tempTable, strings.Join(colDefs, ", "))
+	createSQL := fmt.Sprintf("CREATE TABLE %s (%s)", tempTable, strings.Join(colDefs, ", "))
 
-	// Create temp table
-	if _, err := m.db.ExecContext(ctx, createSQL); err != nil {
+	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return nil, fmt.Errorf("create temp table: %w", err)
 	}
 
-	// Defer cleanup
-	defer m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", tempTable))
-
-	// Insert all rows from all shards
-	for _, rs := range results {
-		if len(rs.Rows) == 0 {
-			continue
-		}
-
-		for _, row := range rs.Rows {
-			// Build INSERT statement
-			placeholders := make([]string, len(schema.Columns))
-			values := make([]any, len(schema.Columns))
-			for i, col := range schema.Columns {
-				placeholders[i] = "?"
-				values[i] = row[col]
-			}
-			insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-				tempTable,
-				strings.Join(quoteIdentifiers(schema.Columns), ", "),
-				strings.Join(placeholders, ", "))
-
-			if _, err := m.db.ExecContext(ctx, insertSQL, values...); err != nil {
-				return nil, fmt.Errorf("insert into temp table: %w", err)
-			}
-		}
-	}
-
-	// Replace table name in original query with temp table
-	mergeSQL := replaceTableWithTemp(sqlQuery, tempTable)
-
-	// Execute the modified query against temp table
-	rows, err := m.db.QueryContext(ctx, mergeSQL)
-	if err != nil {
-		return nil, fmt.Errorf("execute merge query: %w", err)
-	}
-	defer rows.Close()
-
-	// Read results
-	cols, err := rows.Columns()
-	if err != nil {
+	// Batch insert all rows
+	if err := batchInsertResultSets(ctx, db, tempTable, schema.Columns, results); err != nil {
 		return nil, err
 	}
 
-	var merged []map[string]any
-	for rows.Next() {
-		vals := make([]any, len(cols))
-		ptrs := make([]any, len(cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
-		}
-		row := make(map[string]any, len(cols))
-		for i, col := range cols {
-			row[col] = vals[i]
-		}
-		merged = append(merged, row)
-	}
+	// Replace table name in original query with our table
+	mergeSQL := replaceTableWithTemp(sqlQuery, tempTable)
 
-	return merged, rows.Err()
+	return queryRows(ctx, db, mergeSQL)
 }
 
 // MergeAndQuery handles queries with aggregations, ORDER BY, LIMIT, etc.
-// It takes raw data from shards and applies the full query logic
+// It takes raw data from shards and applies the full query logic.
 func (m *MergeEngine) MergeAndQuery(ctx context.Context, originalQuery string, tableName string, results []*shard.QueryResultSet) ([]map[string]any, error) {
-	// Lock for concurrent access
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	
-	// If no results, return empty
 	if len(results) == 0 {
 		return []map[string]any{}, nil
 	}
 
-	// Find first non-empty result set for schema
 	var schema *shard.QueryResultSet
 	for _, rs := range results {
 		if len(rs.Columns) > 0 {
@@ -188,62 +116,168 @@ func (m *MergeEngine) MergeAndQuery(ctx context.Context, originalQuery string, t
 		return []map[string]any{}, nil
 	}
 
-	// Create unique temporary table name using atomic counter
-	tableID := atomic.AddUint64(&m.counter, 1)
-	tempTable := fmt.Sprintf("temp_merge_data_%d", tableID)
+	db, err := openMergeDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 
-	// Build CREATE TABLE statement
+	tempTable := "merge_data"
+
 	var colDefs []string
 	for i, col := range schema.Columns {
 		typeName := schema.Types[i]
 		sqlType := mapDuckDBType(typeName)
 		colDefs = append(colDefs, fmt.Sprintf("%s %s", quoteIdentifier(col), sqlType))
 	}
-	createSQL := fmt.Sprintf("CREATE TEMP TABLE %s (%s)", tempTable, strings.Join(colDefs, ", "))
+	createSQL := fmt.Sprintf("CREATE TABLE %s (%s)", tempTable, strings.Join(colDefs, ", "))
 
-	// Create temp table
-	if _, err := m.db.ExecContext(ctx, createSQL); err != nil {
+	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return nil, fmt.Errorf("create temp table: %w", err)
 	}
 
-	// Defer cleanup
-	defer m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", tempTable))
+	if err := batchInsertResultSets(ctx, db, tempTable, schema.Columns, results); err != nil {
+		return nil, err
+	}
 
-	// Insert all rows from all shards
-	for _, rs := range results {
-		if len(rs.Rows) == 0 {
-			continue
+	mergeSQL := replaceTableWithTemp(originalQuery, tempTable)
+	return queryRows(ctx, db, mergeSQL)
+}
+
+// MergeAndQueryFromMaps merges map-based results (e.g. from cross-index queries)
+// and re-executes the original query against the combined data.
+func (m *MergeEngine) MergeAndQueryFromMaps(ctx context.Context, originalQuery string, tableName string, columns []string, allRows []map[string]any) ([]map[string]any, []string, error) {
+	if len(allRows) == 0 {
+		return []map[string]any{}, columns, nil
+	}
+
+	// Infer types from first row
+	types := make([]string, len(columns))
+	for i, col := range columns {
+		types[i] = inferDuckDBType(allRows[0][col])
+	}
+
+	db, err := openMergeDB()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer db.Close()
+
+	tempTable := "merge_data"
+
+	var colDefs []string
+	for i, col := range columns {
+		colDefs = append(colDefs, fmt.Sprintf("%s %s", quoteIdentifier(col), types[i]))
+	}
+	createSQL := fmt.Sprintf("CREATE TABLE %s (%s)", tempTable, strings.Join(colDefs, ", "))
+
+	if _, err := db.ExecContext(ctx, createSQL); err != nil {
+		return nil, nil, fmt.Errorf("create temp table: %w", err)
+	}
+
+	// Batch insert all rows
+	if err := batchInsertMaps(ctx, db, tempTable, columns, allRows); err != nil {
+		return nil, nil, err
+	}
+
+	mergeSQL := replaceTableWithTemp(originalQuery, tempTable)
+
+	rows, err := queryRows(ctx, db, mergeSQL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var cols []string
+	if len(rows) > 0 {
+		for k := range rows[0] {
+			cols = append(cols, k)
 		}
+	} else {
+		cols = columns
+	}
 
+	return rows, cols, nil
+}
+
+// batchInsertResultSets inserts rows from QueryResultSets in batches.
+func batchInsertResultSets(ctx context.Context, db *sql.DB, table string, columns []string, results []*shard.QueryResultSet) error {
+	const batchSize = 500
+
+	quotedCols := strings.Join(quoteIdentifiers(columns), ", ")
+	numCols := len(columns)
+
+	var batch []map[string]any
+	for _, rs := range results {
 		for _, row := range rs.Rows {
-			placeholders := make([]string, len(schema.Columns))
-			values := make([]any, len(schema.Columns))
-			for i, col := range schema.Columns {
-				placeholders[i] = "?"
-				values[i] = row[col]
-			}
-			insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-				tempTable,
-				strings.Join(quoteIdentifiers(schema.Columns), ", "),
-				strings.Join(placeholders, ", "))
-
-			if _, err := m.db.ExecContext(ctx, insertSQL, values...); err != nil {
-				return nil, fmt.Errorf("insert into temp table: %w", err)
+			batch = append(batch, row)
+			if len(batch) >= batchSize {
+				if err := insertBatch(ctx, db, table, quotedCols, columns, numCols, batch); err != nil {
+					return err
+				}
+				batch = batch[:0]
 			}
 		}
 	}
+	if len(batch) > 0 {
+		return insertBatch(ctx, db, table, quotedCols, columns, numCols, batch)
+	}
+	return nil
+}
 
-	// Replace table name in original query with temp table
-	mergeSQL := replaceTableWithTemp(originalQuery, tempTable)
+// batchInsertMaps inserts map rows in batches.
+func batchInsertMaps(ctx context.Context, db *sql.DB, table string, columns []string, rows []map[string]any) error {
+	const batchSize = 500
 
-	// Execute the query against merged data
-	rows, err := m.db.QueryContext(ctx, mergeSQL)
+	quotedCols := strings.Join(quoteIdentifiers(columns), ", ")
+	numCols := len(columns)
+
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := insertBatch(ctx, db, table, quotedCols, columns, numCols, rows[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// insertBatch inserts a batch of rows with a single multi-row INSERT statement.
+func insertBatch(ctx context.Context, db *sql.DB, table, quotedCols string, columns []string, numCols int, rows []map[string]any) error {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	// Build: INSERT INTO t (c1, c2) VALUES (?, ?), (?, ?), ...
+	rowPlaceholder := "(" + strings.Repeat("?, ", numCols-1) + "?)"
+	allPlaceholders := make([]string, len(rows))
+	values := make([]any, 0, len(rows)*numCols)
+
+	for i, row := range rows {
+		allPlaceholders[i] = rowPlaceholder
+		for _, col := range columns {
+			values = append(values, row[col])
+		}
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s",
+		table, quotedCols, strings.Join(allPlaceholders, ", "))
+
+	if _, err := db.ExecContext(ctx, insertSQL, values...); err != nil {
+		return fmt.Errorf("batch insert into merge table: %w", err)
+	}
+	return nil
+}
+
+// queryRows executes a query and returns results as maps.
+func queryRows(ctx context.Context, db *sql.DB, query string) ([]map[string]any, error) {
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("execute merge query: %w", err)
 	}
 	defer rows.Close()
 
-	// Read results
 	cols, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -324,118 +358,21 @@ func quoteIdentifiers(ids []string) []string {
 }
 
 // replaceTableWithTemp is a simple table name replacement
-// For a production system, this would need proper SQL parsing
 func replaceTableWithTemp(sqlQuery, tempTable string) string {
-	// This is a simplified implementation
-	// In production, you'd want to use a proper SQL parser
-	// For now, we'll use a simple FROM clause replacement
-	
-	// Handle common patterns
 	query := sqlQuery
-	
-	// Find FROM clause and replace table name
-	// This is a basic heuristic - assumes single table queries
+
 	fromIdx := strings.Index(strings.ToUpper(query), "FROM")
 	if fromIdx != -1 {
-		// Extract the part after FROM
 		afterFrom := query[fromIdx+4:]
-		
-		// Find the table name (up to space, WHERE, GROUP, ORDER, LIMIT, or end)
 		tokens := strings.Fields(afterFrom)
 		if len(tokens) > 0 {
 			oldTable := tokens[0]
-			// Remove any semicolon
 			oldTable = strings.TrimSuffix(oldTable, ";")
-			// Replace in the query
 			query = strings.Replace(query, "FROM "+oldTable, "FROM "+tempTable, 1)
 		}
 	}
-	
+
 	return query
-}
-
-// MergeAndQueryFromMaps merges map-based results (e.g. from cross-index queries)
-// and re-executes the original query against the combined data.
-// Returns the merged rows and result column names.
-func (m *MergeEngine) MergeAndQueryFromMaps(ctx context.Context, originalQuery string, tableName string, columns []string, allRows []map[string]any) ([]map[string]any, []string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if len(allRows) == 0 {
-		return []map[string]any{}, columns, nil
-	}
-
-	// Infer types from first row
-	types := make([]string, len(columns))
-	for i, col := range columns {
-		types[i] = inferDuckDBType(allRows[0][col])
-	}
-
-	// Create unique temporary table
-	tableID := atomic.AddUint64(&m.counter, 1)
-	tempTable := fmt.Sprintf("temp_cross_%d", tableID)
-
-	var colDefs []string
-	for i, col := range columns {
-		colDefs = append(colDefs, fmt.Sprintf("%s %s", quoteIdentifier(col), types[i]))
-	}
-	createSQL := fmt.Sprintf("CREATE TEMP TABLE %s (%s)", tempTable, strings.Join(colDefs, ", "))
-
-	if _, err := m.db.ExecContext(ctx, createSQL); err != nil {
-		return nil, nil, fmt.Errorf("create temp table: %w", err)
-	}
-	defer m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", tempTable))
-
-	// Insert all rows
-	for _, row := range allRows {
-		placeholders := make([]string, len(columns))
-		values := make([]any, len(columns))
-		for i, col := range columns {
-			placeholders[i] = "?"
-			values[i] = row[col]
-		}
-		insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-			tempTable,
-			strings.Join(quoteIdentifiers(columns), ", "),
-			strings.Join(placeholders, ", "))
-
-		if _, err := m.db.ExecContext(ctx, insertSQL, values...); err != nil {
-			return nil, nil, fmt.Errorf("insert into temp table: %w", err)
-		}
-	}
-
-	// Replace table name and execute original query
-	mergeSQL := replaceTableWithTemp(originalQuery, tempTable)
-
-	rows, err := m.db.QueryContext(ctx, mergeSQL)
-	if err != nil {
-		return nil, nil, fmt.Errorf("execute merge query: %w", err)
-	}
-	defer rows.Close()
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var merged []map[string]any
-	for rows.Next() {
-		vals := make([]any, len(cols))
-		ptrs := make([]any, len(cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, nil, err
-		}
-		row := make(map[string]any, len(cols))
-		for i, col := range cols {
-			row[col] = vals[i]
-		}
-		merged = append(merged, row)
-	}
-
-	return merged, cols, rows.Err()
 }
 
 // inferDuckDBType infers a DuckDB SQL type from a Go value.
