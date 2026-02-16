@@ -1,0 +1,29 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'duckdb-cluster'
+    environment: 'demo'
+
+scrape_configs:
+  - job_name: 'duckdb-cluster'
+    static_configs:
+      - targets: ['write-node:8080']
+        labels:
+          instance: 'write-node'
+          role: 'write'
+      - targets: ['read-node:8080']
+        labels:
+          instance: 'read-node'
+          role: 'read'
+      - targets: ['all-node:8080']
+        labels:
+          instance: 'all-node'
+          role: 'all'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 10s
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
