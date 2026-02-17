@@ -2,9 +2,12 @@ package security
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -22,11 +25,15 @@ func HTTPAuthMiddleware(auth *Authenticator) func(http.Handler) http.Handler {
 				return
 			}
 			
+			t0 := time.Now()
+			
 			// Extract authorization header
 			authHeader := r.Header.Get("Authorization")
 			
 			// Authenticate request
 			user, err := auth.AuthenticateRequest(authHeader)
+			tAuth := time.Since(t0)
+			
 			if err != nil {
 				slog.Warn("authentication failed", "error", err, "path", r.URL.Path)
 				http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
@@ -35,6 +42,12 @@ func HTTPAuthMiddleware(auth *Authenticator) func(http.Handler) http.Handler {
 			
 			// Add user to context
 			ctx := WithUser(r.Context(), user)
+			
+			defer func() {
+				tTotal := time.Since(t0)
+				fmt.Fprintf(os.Stderr, "[TIMING] auth check=%v total=%v path=%s\n",
+					tAuth, tTotal, r.URL.Path)
+			}()
 			
 			// Continue to next handler
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -88,12 +101,22 @@ func HTTPAuthzMiddleware(authz *Authorizer) func(http.Handler) http.Handler {
 func HTTPRateLimitMiddleware(limiter *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t0 := time.Now()
+			
 			// Check rate limit
 			if err := limiter.Allow(r.Context()); err != nil {
 				slog.Warn("rate limit exceeded", "error", err)
 				http.Error(w, "Too Many Requests: "+err.Error(), http.StatusTooManyRequests)
 				return
 			}
+			
+			tCheck := time.Since(t0)
+			
+			defer func() {
+				tTotal := time.Since(t0)
+				fmt.Fprintf(os.Stderr, "[TIMING] ratelimit check=%v total=%v path=%s\n",
+					tCheck, tTotal, r.URL.Path)
+			}()
 			
 			// Continue to next handler
 			next.ServeHTTP(w, r)

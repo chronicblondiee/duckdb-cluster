@@ -1,0 +1,41 @@
+target: all
+
+common:
+  data_dir: /data
+  num_shards: 1
+  log_level: info
+
+server:
+  http_listen_addr: ":8080"
+  grpc_listen_addr: ":9095"
+
+security:
+  authentication:
+    enabled: false
+    allow_anonymous: true
+  rate_limit:
+    enabled: false
+
+reliability:
+  timeouts:
+    query_timeout: 60s
+    write_timeout: 30s
+    replication_timeout: 10s
+    health_check_timeout: 5s
+  backpressure:
+    enabled: false
+  admission_control:
+    enabled: false
+  degradation:
+    enabled: false
+
+ism:
+  enabled: false
+
+observability:
+  metrics:
+    enabled: true
+    path: /metrics
+  logging:
+    level: info
+    format: text
