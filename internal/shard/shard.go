@@ -36,6 +36,11 @@ func (s *Shard) Open() error {
 	if err != nil {
 		return fmt.Errorf("open shard %d: %w", s.ID, err)
 	}
+	// Tune connection pool for concurrent read/write workload.
+	// DuckDB supports multiple readers with a single writer.
+	db.SetMaxOpenConns(20)   // Allow up to 20 concurrent connections
+	db.SetMaxIdleConns(20)   // Keep all connections warm
+	db.SetConnMaxLifetime(0) // Reuse connections indefinitely
 	s.db = db
 	return nil
 }
