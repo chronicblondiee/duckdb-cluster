@@ -103,7 +103,6 @@ func (r *Router) handleRead(ctx context.Context, sqlStr string) (*QueryResult, e
 		if err != nil {
 			return nil, err
 		}
-		// log.Printf("DEBUG: Single-shard fast path used for query, returned %d rows", len(rs.Rows))
 		return &QueryResult{Columns: rs.Columns, Rows: rs.Rows, ShardID: 0}, nil
 	}
 

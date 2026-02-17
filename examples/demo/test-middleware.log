@@ -1,0 +1,536 @@
+time=2026-02-17T16:24:26.659Z level=INFO msg="starting duckdb-cluster" target=all data_dir=./test-data-middleware
+2026/02/17 16:24:26 INFO initializing ingester data_dir=./test-data-middleware
+2026/02/17 16:24:26 INFO ingester initialized shard_count=0
+2026/02/17 16:24:26 INFO starting modules target=all count=7 order="[admin compactor ingester distributor querier query-frontend server]"
+2026/02/17 16:24:26 INFO initializing admin module
+2026/02/17 16:24:26 INFO starting admin module
+2026/02/17 16:24:26 INFO initializing compactor module
+2026/02/17 16:24:26 INFO starting compactor module
+2026/02/17 16:24:26 INFO initializing ingester module
+2026/02/17 16:24:26 INFO initializing ingester data_dir=./test-data-middleware
+2026/02/17 16:24:26 INFO ingester initialized shard_count=0
+2026/02/17 16:24:26 INFO starting ingester module
+2026/02/17 16:24:26 INFO initializing distributor module
+2026/02/17 16:24:26 INFO starting distributor module
+2026/02/17 16:24:26 INFO initializing querier module
+2026/02/17 16:24:26 INFO initializing querier data_dir=./test-data-middleware
+2026/02/17 16:24:26 INFO querier initialized shard_count=0
+2026/02/17 16:24:26 INFO starting querier module
+2026/02/17 16:24:26 INFO initializing query-frontend module
+2026/02/17 16:24:26 INFO starting query-frontend module
+2026/02/17 16:24:26 INFO initializing server module
+2026/02/17 16:24:26 INFO starting server module http_addr=:8092
+2026/02/17 16:24:26 INFO all modules started successfully
+2026/02/17 16:24:26 INFO cluster started successfully target=all
+[TIMING] ratelimit check=1.483µs total=26.711µs path=/health
+[TIMING] auth check=651ns total=95.52µs path=/admin/auth/token
+[TIMING] backpressure acquire=5.45µs total=113.254µs path=/admin/auth/token
+[TIMING] ratelimit check=912ns total=116.55µs path=/admin/auth/token
+2026/02/17 16:24:27 INFO index created name=test-middleware shards=1
+[TIMING] auth check=36.379µs total=19.999575ms path=/indices/test-middleware
+[TIMING] backpressure acquire=3.998µs total=20.008352ms path=/indices/test-middleware
+[TIMING] ratelimit check=591ns total=20.010986ms path=/indices/test-middleware
+[TIMING] auth check=27.672µs total=13.725001ms path=/indices/test-middleware/_doc
+[TIMING] backpressure acquire=3.687µs total=13.734349ms path=/indices/test-middleware/_doc
+[TIMING] ratelimit check=611ns total=13.737254ms path=/indices/test-middleware/_doc
+[TIMING] shard=0 QueryWithSchema total=595.656µs query=568.104µs meta=3.646µs fetch=23.594µs rows=1
+[TIMING] handleQuery total=637.114µs decode=11.722µs resolve=531ns route=608.16µs pagination=30ns write=16µs rows=1
+[TIMING] auth check=26.019µs total=669.115µs path=/query
+[TIMING] backpressure acquire=7.223µs total=678.543µs path=/query
+[TIMING] ratelimit check=541ns total=680.717µs path=/query
+[TIMING] shard=0 QueryWithSchema total=274.318µs query=253.689µs meta=1.783µs fetch=18.285µs rows=1
+[TIMING] handleQuery total=295.659µs decode=3.637µs resolve=511ns route=285.059µs pagination=30ns write=6.042µs rows=1
+[TIMING] auth check=22.813µs total=325.455µs path=/query
+[TIMING] backpressure acquire=3.817µs total=331.347µs path=/query
+[TIMING] ratelimit check=551ns total=333.591µs path=/query
+[TIMING] shard=0 QueryWithSchema total=376.742µs query=357.797µs meta=1.322µs fetch=17.383µs rows=1
+[TIMING] handleQuery total=396.519µs decode=3.035µs resolve=461ns route=386.671µs pagination=40ns write=5.981µs rows=1
+[TIMING] auth check=19.407µs total=420.796µs path=/query
+[TIMING] backpressure acquire=3.046µs total=425.985µs path=/query
+[TIMING] ratelimit check=531ns total=428.069µs path=/query
+[TIMING] shard=0 QueryWithSchema total=371.232µs query=354.29µs meta=1.202µs fetch=15.52µs rows=1
+[TIMING] handleQuery total=391.029µs decode=3.075µs resolve=390ns route=382.213µs pagination=40ns write=5.02µs rows=1
+[TIMING] auth check=19.708µs total=415.456µs path=/query
+[TIMING] backpressure acquire=2.745µs total=420.154µs path=/query
+[TIMING] ratelimit check=561ns total=422.188µs path=/query
+[TIMING] shard=0 QueryWithSchema total=591.719µs query=571.871µs meta=1.293µs fetch=18.355µs rows=1
+[TIMING] handleQuery total=614.211µs decode=3.246µs resolve=361ns route=605.134µs pagination=40ns write=5.13µs rows=1
+[TIMING] auth check=21.351µs total=643.697µs path=/query
+[TIMING] backpressure acquire=3.567µs total=649.659µs path=/query
+[TIMING] ratelimit check=821ns total=651.852µs path=/query
+[TIMING] shard=0 QueryWithSchema total=200.479µs query=184.479µs meta=1.252µs fetch=14.528µs rows=1
+[TIMING] handleQuery total=218.613µs decode=3.016µs resolve=411ns route=209.917µs pagination=40ns write=4.939µs rows=1
+[TIMING] auth check=19.086µs total=242.038µs path=/query
+[TIMING] backpressure acquire=3.427µs total=247.669µs path=/query
+[TIMING] ratelimit check=531ns total=249.592µs path=/query
+[TIMING] shard=0 QueryWithSchema total=356.183µs query=338.73µs meta=1.102µs fetch=16.12µs rows=1
+[TIMING] handleQuery total=374.478µs decode=3.146µs resolve=351ns route=365.671µs pagination=40ns write=4.95µs rows=1
+[TIMING] auth check=18.936µs total=397.943µs path=/query
+[TIMING] backpressure acquire=3.006µs total=402.892µs path=/query
+[TIMING] ratelimit check=541ns total=404.845µs path=/query
+[TIMING] shard=0 QueryWithSchema total=197.132µs query=176.924µs meta=1.062µs fetch=18.926µs rows=1
+[TIMING] handleQuery total=214.646µs decode=2.856µs resolve=351ns route=206.35µs pagination=30ns write=4.749µs rows=1
+[TIMING] auth check=19.136µs total=238.1µs path=/query
+[TIMING] backpressure acquire=2.745µs total=242.849µs path=/query
+[TIMING] ratelimit check=501ns total=244.702µs path=/query
+[TIMING] shard=0 QueryWithSchema total=396.93µs query=372.304µs meta=1.603µs fetch=22.733µs rows=1
+[TIMING] handleQuery total=421.287µs decode=5.641µs resolve=361ns route=408.863µs pagination=30ns write=6.051µs rows=1
+[TIMING] auth check=19.046µs total=445.923µs path=/query
+[TIMING] backpressure acquire=2.565µs total=451.023µs path=/query
+[TIMING] ratelimit check=461ns total=453.367µs path=/query
+[TIMING] shard=0 QueryWithSchema total=356.313µs query=339.101µs meta=1.062µs fetch=15.92µs rows=1
+[TIMING] handleQuery total=374.257µs decode=3.096µs resolve=361ns route=365.591µs pagination=40ns write=4.889µs rows=1
+[TIMING] auth check=27.613µs total=406.379µs path=/query
+[TIMING] backpressure acquire=2.965µs total=411.448µs path=/query
+[TIMING] ratelimit check=460ns total=413.301µs path=/query
+[TIMING] shard=0 QueryWithSchema total=273.487µs query=246.246µs meta=1.683µs fetch=25.278µs rows=1
+[TIMING] handleQuery total=297.142µs decode=3.927µs resolve=361ns route=286.592µs pagination=30ns write=5.902µs rows=1
+[TIMING] auth check=20.148µs total=322.7µs path=/query
+[TIMING] backpressure acquire=3.286µs total=328.561µs path=/query
+[TIMING] ratelimit check=491ns total=330.936µs path=/query
+[TIMING] shard=0 QueryWithSchema total=238.02µs query=214.015µs meta=1.182µs fetch=22.583µs rows=1
+[TIMING] handleQuery total=256.576µs decode=2.946µs resolve=351ns route=247.969µs pagination=40ns write=4.91µs rows=1
+[TIMING] auth check=19.747µs total=280.831µs path=/query
+[TIMING] backpressure acquire=3.697µs total=286.502µs path=/query
+[TIMING] ratelimit check=561ns total=288.465µs path=/query
+[TIMING] shard=0 QueryWithSchema total=226.187µs query=207.853µs meta=1.052µs fetch=17.082µs rows=1
+[TIMING] handleQuery total=244.653µs decode=3.377µs resolve=371ns route=235.465µs pagination=30ns write=5.08µs rows=1
+[TIMING] auth check=20.028µs total=269.62µs path=/query
+[TIMING] backpressure acquire=2.986µs total=274.81µs path=/query
+[TIMING] ratelimit check=501ns total=276.964µs path=/query
+[TIMING] shard=0 QueryWithSchema total=372.645µs query=355.933µs meta=1.062µs fetch=15.439µs rows=1
+[TIMING] handleQuery total=396.73µs decode=3.045µs resolve=400ns route=382.143µs pagination=40ns write=10.841µs rows=1
+[TIMING] auth check=19.187µs total=420.365µs path=/query
+[TIMING] backpressure acquire=2.885µs total=425.454µs path=/query
+[TIMING] ratelimit check=470ns total=427.307µs path=/query
+[TIMING] shard=0 QueryWithSchema total=227.84µs query=210.147µs meta=992ns fetch=16.481µs rows=1
+[TIMING] handleQuery total=248.99µs decode=3.516µs resolve=430ns route=239.914µs pagination=40ns write=4.779µs rows=1
+[TIMING] auth check=19.687µs total=275.361µs path=/query
+[TIMING] backpressure acquire=3.236µs total=280.791µs path=/query
+[TIMING] ratelimit check=481ns total=282.724µs path=/query
+[TIMING] shard=0 QueryWithSchema total=228.402µs query=201.531µs meta=1.052µs fetch=25.589µs rows=1
+[TIMING] handleQuery total=246.967µs decode=3.026µs resolve=411ns route=238.371µs pagination=40ns write=4.799µs rows=1
+[TIMING] auth check=19.797µs total=271.353µs path=/query
+[TIMING] backpressure acquire=2.875µs total=276.543µs path=/query
+[TIMING] ratelimit check=501ns total=278.466µs path=/query
+[TIMING] shard=0 QueryWithSchema total=198.446µs query=182.796µs meta=1.343µs fetch=14.067µs rows=1
+[TIMING] handleQuery total=217.091µs decode=3.146µs resolve=451ns route=208.394µs pagination=30ns write=4.729µs rows=1
+[TIMING] auth check=19.797µs total=241.166µs path=/query
+[TIMING] backpressure acquire=3.136µs total=246.345µs path=/query
+[TIMING] ratelimit check=511ns total=248.25µs path=/query
+[TIMING] shard=0 QueryWithSchema total=230.085µs query=209.626µs meta=1.212µs fetch=19.006µs rows=1
+[TIMING] handleQuery total=248.249µs decode=2.916µs resolve=611ns route=239.323µs pagination=40ns write=5.059µs rows=1
+[TIMING] auth check=17.894µs total=270.702µs path=/query
+[TIMING] backpressure acquire=2.655µs total=275.661µs path=/query
+[TIMING] ratelimit check=431ns total=277.605µs path=/query
+[TIMING] shard=0 QueryWithSchema total=198.646µs query=182.876µs meta=1.142µs fetch=14.418µs rows=1
+[TIMING] handleQuery total=217.101µs decode=3.497µs resolve=401ns route=208.064µs pagination=30ns write=4.789µs rows=1
+[TIMING] auth check=19.787µs total=241.517µs path=/query
+[TIMING] backpressure acquire=3.076µs total=246.646µs path=/query
+[TIMING] ratelimit check=481ns total=248.58µs path=/query
+[TIMING] shard=0 QueryWithSchema total=218.433µs query=200.83µs meta=1.152µs fetch=16.231µs rows=1
+[TIMING] handleQuery total=236.357µs decode=2.866µs resolve=651ns route=227.641µs pagination=30ns write=4.859µs rows=1
+[TIMING] auth check=19.557µs total=261.024µs path=/query
+[TIMING] backpressure acquire=2.685µs total=265.642µs path=/query
+[TIMING] ratelimit check=471ns total=267.546µs path=/query
+[TIMING] shard=0 QueryWithSchema total=211.871µs query=194.478µs meta=1.182µs fetch=15.991µs rows=1
+[TIMING] handleQuery total=229.875µs decode=3.076µs resolve=431ns route=221.288µs pagination=40ns write=4.719µs rows=1
+[TIMING] auth check=21.611µs total=255.864µs path=/query
+[TIMING] backpressure acquire=2.855µs total=260.873µs path=/query
+[TIMING] ratelimit check=481ns total=262.797µs path=/query
+[TIMING] shard=0 QueryWithSchema total=344.442µs query=328.151µs meta=1.142µs fetch=14.918µs rows=1
+[TIMING] handleQuery total=362.626µs decode=3.096µs resolve=411ns route=353.689µs pagination=40ns write=5.08µs rows=1
+[TIMING] auth check=19.276µs total=386.671µs path=/query
+[TIMING] backpressure acquire=2.966µs total=391.701µs path=/query
+[TIMING] ratelimit check=481ns total=393.644µs path=/query
+[TIMING] shard=0 QueryWithSchema total=248.75µs query=226.207µs meta=2.204µs fetch=20.048µs rows=1
+[TIMING] handleQuery total=270.261µs decode=3.236µs resolve=410ns route=260.723µs pagination=40ns write=5.5µs rows=1
+[TIMING] auth check=19.186µs total=294.056µs path=/query
+[TIMING] backpressure acquire=2.876µs total=298.956µs path=/query
+[TIMING] ratelimit check=481ns total=300.949µs path=/query
+[TIMING] shard=0 QueryWithSchema total=211.079µs query=194.067µs meta=1.182µs fetch=15.6µs rows=1
+[TIMING] handleQuery total=229.404µs decode=2.865µs resolve=511ns route=220.877µs pagination=41ns write=4.779µs rows=1
+[TIMING] auth check=24.136µs total=257.948µs path=/query
+[TIMING] backpressure acquire=2.745µs total=262.787µs path=/query
+[TIMING] ratelimit check=481ns total=264.69µs path=/query
+[TIMING] shard=0 QueryWithSchema total=217.472µs query=200.109µs meta=952ns fetch=16.18µs rows=1
+[TIMING] handleQuery total=237.229µs decode=3.617µs resolve=431ns route=228.142µs pagination=40ns write=4.689µs rows=1
+[TIMING] auth check=20.189µs total=267.987µs path=/query
+[TIMING] backpressure acquire=4.368µs total=274.449µs path=/query
+[TIMING] ratelimit check=481ns total=276.352µs path=/query
+[TIMING] shard=0 QueryWithSchema total=360.462µs query=342.898µs meta=1.031µs fetch=16.31µs rows=1
+[TIMING] handleQuery total=378.746µs decode=3.507µs resolve=401ns route=369.619µs pagination=30ns write=4.869µs rows=1
+[TIMING] auth check=21.3µs total=404.595µs path=/query
+[TIMING] backpressure acquire=3.818µs total=410.436µs path=/query
+[TIMING] ratelimit check=521ns total=412.29µs path=/query
+[TIMING] shard=0 QueryWithSchema total=216.359µs query=198.596µs meta=1.282µs fetch=16.25µs rows=1
+[TIMING] handleQuery total=237.239µs decode=3.737µs resolve=361ns route=226.258µs pagination=40ns write=6.533µs rows=1
+[TIMING] auth check=19.667µs total=261.464µs path=/query
+[TIMING] backpressure acquire=2.735µs total=269.399µs path=/query
+[TIMING] ratelimit check=481ns total=271.404µs path=/query
+[TIMING] shard=0 QueryWithSchema total=201.24µs query=186.152µs meta=922ns fetch=13.926µs rows=1
+[TIMING] handleQuery total=226.257µs decode=10.66µs resolve=331ns route=210.187µs pagination=30ns write=4.739µs rows=1
+[TIMING] auth check=17.573µs total=247.959µs path=/query
+[TIMING] backpressure acquire=2.855µs total=252.688µs path=/query
+[TIMING] ratelimit check=441ns total=254.391µs path=/query
+[TIMING] shard=0 QueryWithSchema total=203.214µs query=187.204µs meta=1.092µs fetch=14.678µs rows=1
+[TIMING] handleQuery total=221.178µs decode=3.687µs resolve=351ns route=212.281µs pagination=30ns write=4.529µs rows=1
+[TIMING] auth check=22.172µs total=247.928µs path=/query
+[TIMING] backpressure acquire=2.735µs total=252.578µs path=/query
+[TIMING] ratelimit check=461ns total=254.391µs path=/query
+[TIMING] shard=0 QueryWithSchema total=208.965µs query=192.203µs meta=922ns fetch=15.62µs rows=1
+[TIMING] handleQuery total=226.278µs decode=2.926µs resolve=341ns route=218.082µs pagination=30ns write=4.599µs rows=1
+[TIMING] auth check=20.078µs total=250.574µs path=/query
+[TIMING] backpressure acquire=2.565µs total=254.982µs path=/query
+[TIMING] ratelimit check=481ns total=256.876µs path=/query
+[TIMING] shard=0 QueryWithSchema total=207.222µs query=189.018µs meta=892ns fetch=17.092µs rows=1
+[TIMING] handleQuery total=224.835µs decode=3.196µs resolve=340ns route=216.119µs pagination=40ns write=4.849µs rows=1
+[TIMING] auth check=21.069µs total=250.002µs path=/query
+[TIMING] backpressure acquire=3.055µs total=255.012µs path=/query
+[TIMING] ratelimit check=521ns total=257.988µs path=/query
+[TIMING] shard=0 QueryWithSchema total=220.717µs query=203.375µs meta=1.062µs fetch=16.05µs rows=1
+[TIMING] handleQuery total=238.19µs decode=2.875µs resolve=341ns route=229.885µs pagination=40ns write=4.749µs rows=1
+[TIMING] auth check=18.656µs total=261.214µs path=/query
+[TIMING] backpressure acquire=3.086µs total=266.164µs path=/query
+[TIMING] ratelimit check=441ns total=267.947µs path=/query
+[TIMING] shard=0 QueryWithSchema total=193.776µs query=176.474µs meta=901ns fetch=16.19µs rows=1
+[TIMING] handleQuery total=210.337µs decode=2.795µs resolve=251ns route=202.543µs pagination=20ns write=4.418µs rows=1
+[TIMING] auth check=16.772µs total=231.488µs path=/query
+[TIMING] backpressure acquire=2.705µs total=236.036µs path=/query
+[TIMING] ratelimit check=431ns total=237.689µs path=/query
+[TIMING] shard=0 QueryWithSchema total=215.949µs query=199.197µs meta=1.012µs fetch=15.509µs rows=1
+[TIMING] handleQuery total=233.181µs decode=2.785µs resolve=330ns route=224.855µs pagination=41ns write=4.869µs rows=1
+[TIMING] auth check=21.27µs total=258.519µs path=/query
+[TIMING] backpressure acquire=2.906µs total=263.308µs path=/query
+[TIMING] ratelimit check=461ns total=265.071µs path=/query
+[TIMING] shard=0 QueryWithSchema total=183.157µs query=167.006µs meta=1.153µs fetch=14.768µs rows=1
+[TIMING] handleQuery total=201.581µs decode=2.414µs resolve=320ns route=193.827µs pagination=30ns write=4.689µs rows=1
+[TIMING] auth check=16.902µs total=222.551µs path=/query
+[TIMING] backpressure acquire=2.555µs total=226.909µs path=/query
+[TIMING] ratelimit check=421ns total=228.522µs path=/query
+[TIMING] shard=0 QueryWithSchema total=227.049µs query=208.795µs meta=1.112µs fetch=16.902µs rows=1
+[TIMING] handleQuery total=244.492µs decode=3.076µs resolve=361ns route=235.816µs pagination=30ns write=4.919µs rows=1
+[TIMING] auth check=19.577µs total=268.528µs path=/query
+[TIMING] backpressure acquire=2.395µs total=272.726µs path=/query
+[TIMING] ratelimit check=471ns total=274.519µs path=/query
+[TIMING] shard=0 QueryWithSchema total=214.616µs query=195.921µs meta=941ns fetch=17.533µs rows=1
+[TIMING] handleQuery total=232.75µs decode=3.296µs resolve=351ns route=223.883µs pagination=40ns write=4.859µs rows=1
+[TIMING] auth check=19.467µs total=256.585µs path=/query
+[TIMING] backpressure acquire=3.076µs total=261.855µs path=/query
+[TIMING] ratelimit check=491ns total=263.708µs path=/query
+[TIMING] shard=0 QueryWithSchema total=195.349µs query=179.589µs meta=1.082µs fetch=14.458µs rows=1
+[TIMING] handleQuery total=211.801µs decode=2.916µs resolve=321ns route=203.775µs pagination=30ns write=4.499µs rows=1
+[TIMING] auth check=18.384µs total=234.253µs path=/query
+[TIMING] backpressure acquire=2.645µs total=238.792µs path=/query
+[TIMING] ratelimit check=471ns total=240.525µs path=/query
+[TIMING] shard=0 QueryWithSchema total=215.437µs query=198.656µs meta=972ns fetch=15.589µs rows=1
+[TIMING] handleQuery total=236.137µs decode=3.116µs resolve=351ns route=227.14µs pagination=30ns write=5.17µs rows=1
+[TIMING] auth check=19.707µs total=260.252µs path=/query
+[TIMING] backpressure acquire=2.505µs total=264.68µs path=/query
+[TIMING] ratelimit check=481ns total=266.624µs path=/query
+[TIMING] shard=0 QueryWithSchema total=208.665µs query=192.764µs meta=1.042µs fetch=14.607µs rows=1
+[TIMING] handleQuery total=226.478µs decode=3.206µs resolve=361ns route=217.722µs pagination=50ns write=4.839µs rows=1
+[TIMING] auth check=18.505µs total=249.261µs path=/query
+[TIMING] backpressure acquire=3.166µs total=254.301µs path=/query
+[TIMING] ratelimit check=460ns total=256.064µs path=/query
+[TIMING] shard=0 QueryWithSchema total=184.389µs query=170.052µs meta=962ns fetch=13.165µs rows=1
+[TIMING] handleQuery total=202.032µs decode=2.965µs resolve=330ns route=193.356µs pagination=20ns write=5.05µs rows=1
+[TIMING] auth check=17.543µs total=223.653µs path=/query
+[TIMING] backpressure acquire=3.958µs total=229.464µs path=/query
+[TIMING] ratelimit check=441ns total=231.337µs path=/query
+[TIMING] shard=0 QueryWithSchema total=222.922µs query=206.34µs meta=1.262µs fetch=15.089µs rows=1
+[TIMING] handleQuery total=240.515µs decode=3.136µs resolve=351ns route=232.039µs pagination=30ns write=4.639µs rows=1
+[TIMING] auth check=19.827µs total=265.021µs path=/query
+[TIMING] backpressure acquire=2.535µs total=269.519µs path=/query
+[TIMING] ratelimit check=471ns total=271.373µs path=/query
+[TIMING] shard=0 QueryWithSchema total=207.732µs query=187.765µs meta=952ns fetch=18.785µs rows=1
+[TIMING] handleQuery total=225.717µs decode=2.816µs resolve=271ns route=216.329µs pagination=30ns write=5.961µs rows=1
+[TIMING] auth check=17.664µs total=247.248µs path=/query
+[TIMING] backpressure acquire=2.775µs total=251.846µs path=/query
+[TIMING] ratelimit check=441ns total=253.589µs path=/query
+[TIMING] shard=0 QueryWithSchema total=229.223µs query=212.592µs meta=1.032µs fetch=15.369µs rows=1
+[TIMING] handleQuery total=246.887µs decode=3.056µs resolve=361ns route=238.331µs pagination=20ns write=4.799µs rows=1
+[TIMING] auth check=20.599µs total=271.914µs path=/query
+[TIMING] backpressure acquire=3.146µs total=277.264µs path=/query
+[TIMING] ratelimit check=461ns total=279.138µs path=/query
+[TIMING] shard=0 QueryWithSchema total=189.979µs query=174.129µs meta=851ns fetch=14.768µs rows=1
+[TIMING] handleQuery total=208.615µs decode=2.635µs resolve=281ns route=201.04µs pagination=40ns write=4.329µs rows=1
+[TIMING] auth check=17.072µs total=229.915µs path=/query
+[TIMING] backpressure acquire=2.585µs total=234.393µs path=/query
+[TIMING] ratelimit check=361ns total=235.986µs path=/query
+[TIMING] shard=0 QueryWithSchema total=222.962µs query=207.062µs meta=1.052µs fetch=14.607µs rows=1
+[TIMING] handleQuery total=240.776µs decode=2.946µs resolve=361ns route=232.259µs pagination=40ns write=4.859µs rows=1
+[TIMING] auth check=18.966µs total=264.02µs path=/query
+[TIMING] backpressure acquire=2.915µs total=268.858µs path=/query
+[TIMING] ratelimit check=460ns total=270.762µs path=/query
+[TIMING] shard=0 QueryWithSchema total=230.906µs query=213.433µs meta=1.223µs fetch=16.01µs rows=1
+[TIMING] handleQuery total=249.402µs decode=3.807µs resolve=380ns route=239.913µs pagination=20ns write=4.95µs rows=1
+[TIMING] auth check=21.281µs total=275.591µs path=/query
+[TIMING] backpressure acquire=5.811µs total=283.286µs path=/query
+[TIMING] ratelimit check=531ns total=285.269µs path=/query
+[TIMING] shard=0 QueryWithSchema total=221.959µs query=202.743µs meta=1.373µs fetch=17.473µs rows=1
+[TIMING] handleQuery total=243.761µs decode=3.066µs resolve=361ns route=232.099µs pagination=40ns write=7.895µs rows=1
+[TIMING] auth check=22.052µs total=270.381µs path=/query
+[TIMING] backpressure acquire=4.108µs total=276.483µs path=/query
+[TIMING] ratelimit check=471ns total=278.327µs path=/query
+[TIMING] shard=0 QueryWithSchema total=187.995µs query=172.276µs meta=1.052µs fetch=14.417µs rows=1
+[TIMING] handleQuery total=206.3µs decode=3.046µs resolve=321ns route=197.684µs pagination=30ns write=4.889µs rows=1
+[TIMING] auth check=18.715µs total=229.454µs path=/query
+[TIMING] backpressure acquire=4.369µs total=235.686µs path=/query
+[TIMING] ratelimit check=471ns total=237.469µs path=/query
+[TIMING] shard=0 QueryWithSchema total=205.409µs query=187.204µs meta=1.072µs fetch=16.922µs rows=1
+[TIMING] handleQuery total=223.523µs decode=2.976µs resolve=381ns route=214.927µs pagination=40ns write=4.889µs rows=1
+[TIMING] auth check=18.695µs total=246.626µs path=/query
+[TIMING] backpressure acquire=2.585µs total=251.245µs path=/query
+[TIMING] ratelimit check=461ns total=253.129µs path=/query
+[TIMING] shard=0 QueryWithSchema total=203.114µs query=187.164µs meta=1.072µs fetch=14.648µs rows=1
+[TIMING] handleQuery total=221.63µs decode=3.197µs resolve=350ns route=212.511µs pagination=41ns write=5.229µs rows=1
+[TIMING] auth check=19.657µs total=245.945µs path=/query
+[TIMING] backpressure acquire=2.836µs total=250.785µs path=/query
+[TIMING] ratelimit check=471ns total=252.598µs path=/query
+[TIMING] shard=0 QueryWithSchema total=208.645µs query=192.564µs meta=1.012µs fetch=14.829µs rows=1
+[TIMING] handleQuery total=225.857µs decode=2.815µs resolve=320ns route=217.592µs pagination=20ns write=4.809µs rows=1
+[TIMING] auth check=17.773µs total=247.648µs path=/query
+[TIMING] backpressure acquire=2.394µs total=251.846µs path=/query
+[TIMING] ratelimit check=411ns total=253.579µs path=/query
+[TIMING] shard=0 QueryWithSchema total=224.584µs query=208.223µs meta=1.133µs fetch=15.018µs rows=1
+[TIMING] handleQuery total=243.47µs decode=2.895µs resolve=350ns route=233.702µs pagination=41ns write=6.191µs rows=1
+[TIMING] auth check=18.826µs total=266.644µs path=/query
+[TIMING] backpressure acquire=3.116µs total=271.724µs path=/query
+[TIMING] ratelimit check=481ns total=273.517µs path=/query
+[TIMING] shard=0 QueryWithSchema total=427.919µs query=408.593µs meta=1.633µs fetch=17.443µs rows=1
+[TIMING] handleQuery total=493.012µs decode=48.081µs resolve=350ns route=438.099µs pagination=40ns write=6.111µs rows=1
+[TIMING] auth check=17.753µs total=515.164µs path=/query
+[TIMING] backpressure acquire=2.786µs total=519.984µs path=/query
+[TIMING] ratelimit check=431ns total=523.831µs path=/query
+[TIMING] shard=0 QueryWithSchema total=217.712µs query=200.108µs meta=971ns fetch=16.411µs rows=1
+[TIMING] handleQuery total=235.615µs decode=3.106µs resolve=351ns route=226.839µs pagination=20ns write=4.979µs rows=1
+[TIMING] auth check=19.637µs total=259.541µs path=/query
+[TIMING] backpressure acquire=3.106µs total=264.53µs path=/query
+[TIMING] ratelimit check=481ns total=266.323µs path=/query
+[TIMING] shard=0 QueryWithSchema total=220.457µs query=202.173µs meta=1.132µs fetch=16.902µs rows=1
+[TIMING] handleQuery total=239.062µs decode=3.326µs resolve=360ns route=229.725µs pagination=30ns write=5.31µs rows=1
+[TIMING] auth check=19.457µs total=262.757µs path=/query
+[TIMING] backpressure acquire=3.116µs total=267.767µs path=/query
+[TIMING] ratelimit check=471ns total=269.59µs path=/query
+[TIMING] shard=0 QueryWithSchema total=340.864µs query=322.74µs meta=1.192µs fetch=16.691µs rows=1
+[TIMING] handleQuery total=358.608µs decode=3.266µs resolve=251ns route=349.711µs pagination=30ns write=5.04µs rows=1
+[TIMING] auth check=17.433µs total=380.369µs path=/query
+[TIMING] backpressure acquire=2.765µs total=385.088µs path=/query
+[TIMING] ratelimit check=391ns total=386.801µs path=/query
+[TIMING] shard=0 QueryWithSchema total=207.843µs query=191.452µs meta=1.082µs fetch=15.108µs rows=1
+[TIMING] handleQuery total=225.957µs decode=3.526µs resolve=360ns route=216.871µs pagination=40ns write=4.859µs rows=1
+[TIMING] auth check=21µs total=251.767µs path=/query
+[TIMING] backpressure acquire=3.096µs total=256.916µs path=/query
+[TIMING] ratelimit check=531ns total=258.85µs path=/query
+[TIMING] shard=0 QueryWithSchema total=213.994µs query=197.533µs meta=942ns fetch=15.309µs rows=1
+[TIMING] handleQuery total=230.967µs decode=2.866µs resolve=341ns route=222.6µs pagination=40ns write=4.809µs rows=1
+[TIMING] auth check=18.064µs total=253.109µs path=/query
+[TIMING] backpressure acquire=2.715µs total=257.647µs path=/query
+[TIMING] ratelimit check=431ns total=259.46µs path=/query
+[TIMING] shard=0 QueryWithSchema total=221.458µs query=202.042µs meta=1.433µs fetch=17.743µs rows=1
+[TIMING] handleQuery total=246.716µs decode=6.723µs resolve=351ns route=232.409µs pagination=40ns write=6.903µs rows=1
+[TIMING] auth check=22.753µs total=274.078µs path=/query
+[TIMING] backpressure acquire=3.497µs total=279.599µs path=/query
+[TIMING] ratelimit check=501ns total=281.452µs path=/query
+[TIMING] shard=0 QueryWithSchema total=208.114µs query=188.046µs meta=912ns fetch=18.936µs rows=1
+[TIMING] handleQuery total=225.807µs decode=3.056µs resolve=350ns route=217.131µs pagination=40ns write=4.929µs rows=1
+[TIMING] auth check=19.167µs total=249.091µs path=/query
+[TIMING] backpressure acquire=2.986µs total=253.971µs path=/query
+[TIMING] ratelimit check=491ns total=255.734µs path=/query
+[TIMING] shard=0 QueryWithSchema total=211.51µs query=191.131µs meta=5.15µs fetch=15.028µs rows=1
+[TIMING] handleQuery total=229.464µs decode=3.207µs resolve=371ns route=220.757µs pagination=30ns write=4.809µs rows=1
+[TIMING] auth check=22.763µs total=256.706µs path=/query
+[TIMING] backpressure acquire=3.186µs total=261.975µs path=/query
+[TIMING] ratelimit check=491ns total=263.829µs path=/query
+[TIMING] shard=0 QueryWithSchema total=228.221µs query=210.037µs meta=1.132µs fetch=16.822µs rows=1
+[TIMING] handleQuery total=246.236µs decode=3.056µs resolve=341ns route=237.599µs pagination=30ns write=4.9µs rows=1
+[TIMING] auth check=18.735µs total=269.149µs path=/query
+[TIMING] backpressure acquire=3.356µs total=274.469µs path=/query
+[TIMING] ratelimit check=461ns total=276.302µs path=/query
+[TIMING] shard=0 QueryWithSchema total=214.937µs query=193.957µs meta=1.102µs fetch=19.647µs rows=1
+[TIMING] handleQuery total=232.861µs decode=3.046µs resolve=341ns route=224.214µs pagination=40ns write=4.92µs rows=1
+[TIMING] auth check=22.342µs total=259.641µs path=/query
+[TIMING] backpressure acquire=2.956µs total=264.641µs path=/query
+[TIMING] ratelimit check=451ns total=268.488µs path=/query
+[TIMING] shard=0 QueryWithSchema total=210.939µs query=194.108µs meta=1.072µs fetch=15.519µs rows=1
+[TIMING] handleQuery total=233.141µs decode=2.975µs resolve=320ns route=220.097µs pagination=40ns write=9.378µs rows=1
+[TIMING] auth check=18.876µs total=256.235µs path=/query
+[TIMING] backpressure acquire=3.206µs total=261.304µs path=/query
+[TIMING] ratelimit check=451ns total=263.208µs path=/query
+[TIMING] shard=0 QueryWithSchema total=194.117µs query=179.179µs meta=922ns fetch=13.796µs rows=1
+[TIMING] handleQuery total=209.987µs decode=2.334µs resolve=260ns route=202.643µs pagination=20ns write=4.438µs rows=1
+[TIMING] auth check=16.781µs total=230.576µs path=/query
+[TIMING] backpressure acquire=2.334µs total=234.584µs path=/query
+[TIMING] ratelimit check=381ns total=236.237µs path=/query
+[TIMING] shard=0 QueryWithSchema total=208.684µs query=191.341µs meta=1.083µs fetch=16.05µs rows=1
+[TIMING] handleQuery total=226.989µs decode=3.486µs resolve=360ns route=217.963µs pagination=40ns write=4.829µs rows=1
+[TIMING] auth check=20.219µs total=254.091µs path=/query
+[TIMING] backpressure acquire=2.955µs total=259.06µs path=/query
+[TIMING] ratelimit check=470ns total=260.943µs path=/query
+[TIMING] shard=0 QueryWithSchema total=215.788µs query=198.987µs meta=961ns fetch=15.609µs rows=1
+[TIMING] handleQuery total=233.712µs decode=3.356µs resolve=361ns route=224.615µs pagination=40ns write=5.03µs rows=1
+[TIMING] auth check=18.245µs total=255.874µs path=/query
+[TIMING] backpressure acquire=2.925µs total=260.723µs path=/query
+[TIMING] ratelimit check=460ns total=262.596µs path=/query
+[TIMING] shard=0 QueryWithSchema total=207.082µs query=191.352µs meta=922ns fetch=14.587µs rows=1
+[TIMING] handleQuery total=223.713µs decode=2.675µs resolve=311ns route=215.868µs pagination=40ns write=4.539µs rows=1
+[TIMING] auth check=17.433µs total=245.404µs path=/query
+[TIMING] backpressure acquire=2.535µs total=249.843µs path=/query
+[TIMING] ratelimit check=451ns total=251.546µs path=/query
+[TIMING] shard=0 QueryWithSchema total=192.775µs query=176.654µs meta=1.082µs fetch=14.818µs rows=1
+[TIMING] handleQuery total=210.338µs decode=2.936µs resolve=351ns route=201.882µs pagination=30ns write=4.829µs rows=1
+[TIMING] auth check=22.923µs total=237.319µs path=/query
+[TIMING] backpressure acquire=2.876µs total=242.048µs path=/query
+[TIMING] ratelimit check=451ns total=244.032µs path=/query
+[TIMING] shard=0 QueryWithSchema total=199.397µs query=183.547µs meta=902ns fetch=14.718µs rows=1
+[TIMING] handleQuery total=217.962µs decode=2.645µs resolve=321ns route=209.486µs pagination=30ns write=5.19µs rows=1
+[TIMING] auth check=18.184µs total=240.154µs path=/query
+[TIMING] backpressure acquire=2.775µs total=244.802µs path=/query
+[TIMING] ratelimit check=430ns total=246.536µs path=/query
+[TIMING] shard=0 QueryWithSchema total=217.11µs query=200.81µs meta=1.162µs fetch=14.868µs rows=1
+[TIMING] handleQuery total=236.136µs decode=3.577µs resolve=341ns route=227.009µs pagination=30ns write=4.849µs rows=1
+[TIMING] auth check=19.747µs total=260.502µs path=/query
+[TIMING] backpressure acquire=3.606µs total=266.153µs path=/query
+[TIMING] ratelimit check=501ns total=268.157µs path=/query
+[TIMING] shard=0 QueryWithSchema total=192.363µs query=177.044µs meta=1.001µs fetch=14.096µs rows=1
+[TIMING] handleQuery total=210.227µs decode=2.956µs resolve=360ns route=201.3µs pagination=30ns write=5.27µs rows=1
+[TIMING] auth check=22.623µs total=237.018µs path=/query
+[TIMING] backpressure acquire=4.368µs total=243.28µs path=/query
+[TIMING] ratelimit check=471ns total=245.053µs path=/query
+[TIMING] shard=0 QueryWithSchema total=221.198µs query=201.891µs meta=1.072µs fetch=17.984µs rows=1
+[TIMING] handleQuery total=239.132µs decode=3.196µs resolve=351ns route=230.375µs pagination=30ns write=4.86µs rows=1
+[TIMING] auth check=19.277µs total=263.148µs path=/query
+[TIMING] backpressure acquire=2.825µs total=267.876µs path=/query
+[TIMING] ratelimit check=480ns total=271.773µs path=/query
+[TIMING] shard=0 QueryWithSchema total=201.631µs query=184.819µs meta=972ns fetch=15.63µs rows=1
+[TIMING] handleQuery total=219.756µs decode=3.387µs resolve=320ns route=210.848µs pagination=30ns write=4.86µs rows=1
+[TIMING] auth check=22.572µs total=246.786µs path=/query
+[TIMING] backpressure acquire=3.256µs total=252.017µs path=/query
+[TIMING] ratelimit check=451ns total=253.85µs path=/query
+[TIMING] shard=0 QueryWithSchema total=203.505µs query=186.914µs meta=942ns fetch=15.429µs rows=1
+[TIMING] handleQuery total=220.667µs decode=2.905µs resolve=361ns route=212.292µs pagination=30ns write=4.769µs rows=1
+[TIMING] auth check=18.095µs total=242.759µs path=/query
+[TIMING] backpressure acquire=3.036µs total=247.699µs path=/query
+[TIMING] ratelimit check=461ns total=249.412µs path=/query
+[TIMING] shard=0 QueryWithSchema total=209.767µs query=192.614µs meta=982ns fetch=15.97µs rows=1
+[TIMING] handleQuery total=227.41µs decode=3.086µs resolve=341ns route=218.623µs pagination=61ns write=4.999µs rows=1
+[TIMING] auth check=18.615µs total=250.373µs path=/query
+[TIMING] backpressure acquire=3.166µs total=255.633µs path=/query
+[TIMING] ratelimit check=461ns total=257.396µs path=/query
+[TIMING] shard=0 QueryWithSchema total=211.91µs query=195.449µs meta=822ns fetch=15.419µs rows=1
+[TIMING] handleQuery total=252.537µs decode=3.657µs resolve=22.432µs route=221.498µs pagination=31ns write=4.598µs rows=1
+[TIMING] auth check=20.439µs total=277.134µs path=/query
+[TIMING] backpressure acquire=3.517µs total=282.505µs path=/query
+[TIMING] ratelimit check=521ns total=284.328µs path=/query
+[TIMING] shard=0 QueryWithSchema total=205.088µs query=188.637µs meta=871ns fetch=15.369µs rows=1
+[TIMING] handleQuery total=223.122µs decode=3.577µs resolve=331ns route=214.065µs pagination=30ns write=4.799µs rows=1
+[TIMING] auth check=18.174µs total=245.354µs path=/query
+[TIMING] backpressure acquire=3.207µs total=250.434µs path=/query
+[TIMING] ratelimit check=471ns total=252.107µs path=/query
+[TIMING] shard=0 QueryWithSchema total=180.401µs query=166.315µs meta=911ns fetch=12.964µs rows=1
+[TIMING] handleQuery total=196.752µs decode=2.605µs resolve=351ns route=188.637µs pagination=40ns write=4.819µs rows=1
+[TIMING] auth check=16.25µs total=216.89µs path=/query
+[TIMING] backpressure acquire=2.474µs total=221.178µs path=/query
+[TIMING] ratelimit check=391ns total=222.781µs path=/query
+[TIMING] shard=0 QueryWithSchema total=206.631µs query=190.12µs meta=892ns fetch=15.389µs rows=1
+[TIMING] handleQuery total=225.596µs decode=2.955µs resolve=340ns route=216.58µs pagination=30ns write=5.37µs rows=1
+[TIMING] auth check=20.259µs total=250.254µs path=/query
+[TIMING] backpressure acquire=3.106µs total=255.313µs path=/query
+[TIMING] ratelimit check=461ns total=257.076µs path=/query
+[TIMING] shard=0 QueryWithSchema total=228.943µs query=212.322µs meta=1.262µs fetch=15.119µs rows=1
+[TIMING] handleQuery total=246.597µs decode=3.076µs resolve=361ns route=238.01µs pagination=30ns write=4.79µs rows=1
+[TIMING] auth check=19.767µs total=270.842µs path=/query
+[TIMING] backpressure acquire=2.645µs total=275.511µs path=/query
+[TIMING] ratelimit check=481ns total=277.374µs path=/query
+[TIMING] shard=0 QueryWithSchema total=208.906µs query=192.054µs meta=1.142µs fetch=15.469µs rows=1
+[TIMING] handleQuery total=231.167µs decode=7.073µs resolve=380ns route=218.093µs pagination=50ns write=5.21µs rows=1
+[TIMING] auth check=21.992µs total=257.587µs path=/query
+[TIMING] backpressure acquire=3.026µs total=262.667µs path=/query
+[TIMING] ratelimit check=491ns total=264.6µs path=/query
+[TIMING] shard=0 QueryWithSchema total=207.422µs query=189.789µs meta=1.122µs fetch=16.301µs rows=1
+[TIMING] handleQuery total=226.027µs decode=4.008µs resolve=381ns route=216.459µs pagination=30ns write=4.829µs rows=1
+[TIMING] auth check=23.404µs total=253.93µs path=/query
+[TIMING] backpressure acquire=3.256µs total=259.16µs path=/query
+[TIMING] ratelimit check=1.072µs total=263.909µs path=/query
+[TIMING] shard=0 QueryWithSchema total=217.672µs query=201.13µs meta=1.002µs fetch=15.309µs rows=1
+[TIMING] handleQuery total=235.786µs decode=3.276µs resolve=391ns route=226.729µs pagination=30ns write=5.04µs rows=1
+[TIMING] auth check=18.756µs total=258.84µs path=/query
+[TIMING] backpressure acquire=3.066µs total=263.819µs path=/query
+[TIMING] ratelimit check=481ns total=265.622µs path=/query
+[TIMING] shard=0 QueryWithSchema total=207.843µs query=190.43µs meta=1.032µs fetch=16.141µs rows=1
+[TIMING] handleQuery total=225.326µs decode=2.986µs resolve=350ns route=216.81µs pagination=40ns write=4.829µs rows=1
+[TIMING] auth check=21.23µs total=250.824µs path=/query
+[TIMING] backpressure acquire=2.585µs total=255.323µs path=/query
+[TIMING] ratelimit check=491ns total=257.066µs path=/query
+[TIMING] shard=0 QueryWithSchema total=209.215µs query=191.502µs meta=932ns fetch=16.531µs rows=1
+[TIMING] handleQuery total=226.699µs decode=3.066µs resolve=341ns route=218.112µs pagination=40ns write=4.85µs rows=1
+[TIMING] auth check=19.657µs total=251.656µs path=/query
+[TIMING] backpressure acquire=2.946µs total=256.565µs path=/query
+[TIMING] ratelimit check=471ns total=258.359µs path=/query
+[TIMING] shard=0 QueryWithSchema total=195.8µs query=180.411µs meta=982ns fetch=14.177µs rows=1
+[TIMING] handleQuery total=214.616µs decode=2.956µs resolve=341ns route=204.877µs pagination=30ns write=6.082µs rows=1
+[TIMING] auth check=18.034µs total=236.758µs path=/query
+[TIMING] backpressure acquire=2.816µs total=241.697µs path=/query
+[TIMING] ratelimit check=451ns total=243.591µs path=/query
+[TIMING] shard=0 QueryWithSchema total=200.51µs query=184.549µs meta=921ns fetch=14.788µs rows=1
+[TIMING] handleQuery total=217.712µs decode=2.836µs resolve=310ns route=209.396µs pagination=41ns write=4.829µs rows=1
+[TIMING] auth check=17.372µs total=239.162µs path=/query
+[TIMING] backpressure acquire=2.725µs total=243.691µs path=/query
+[TIMING] ratelimit check=411ns total=245.414µs path=/query
+[TIMING] shard=0 QueryWithSchema total=193.656µs query=177.916µs meta=1.082µs fetch=14.408µs rows=1
+[TIMING] handleQuery total=210.999µs decode=2.796µs resolve=341ns route=202.913µs pagination=20ns write=4.618µs rows=1
+[TIMING] auth check=17.823µs total=233.01µs path=/query
+[TIMING] backpressure acquire=2.625µs total=237.449µs path=/query
+[TIMING] ratelimit check=491ns total=239.303µs path=/query
+[TIMING] shard=0 QueryWithSchema total=212.932µs query=196.341µs meta=952ns fetch=15.409µs rows=1
+[TIMING] handleQuery total=230.626µs decode=2.956µs resolve=371ns route=221.839µs pagination=50ns write=5.089µs rows=1
+[TIMING] auth check=21.851µs total=256.715µs path=/query
+[TIMING] backpressure acquire=2.876µs total=261.454µs path=/query
+[TIMING] ratelimit check=471ns total=263.218µs path=/query
+[TIMING] shard=0 QueryWithSchema total=213.264µs query=189.909µs meta=1.142µs fetch=21.961µs rows=1
+[TIMING] handleQuery total=230.646µs decode=2.855µs resolve=310ns route=222.06µs pagination=30ns write=5.079µs rows=1
+[TIMING] auth check=17.904µs total=252.788µs path=/query
+[TIMING] backpressure acquire=2.625µs total=257.407µs path=/query
+[TIMING] ratelimit check=381ns total=259.05µs path=/query
+[TIMING] shard=0 QueryWithSchema total=206.029µs query=189.418µs meta=1.052µs fetch=15.319µs rows=1
+[TIMING] handleQuery total=224.053µs decode=3.567µs resolve=341ns route=215.036µs pagination=30ns write=4.759µs rows=1
+[TIMING] auth check=18.305µs total=246.476µs path=/query
+[TIMING] backpressure acquire=2.895µs total=251.235µs path=/query
+[TIMING] ratelimit check=501ns total=253.119µs path=/query
+[TIMING] shard=0 QueryWithSchema total=190.67µs query=175.512µs meta=821ns fetch=14.137µs rows=1
+[TIMING] handleQuery total=206.621µs decode=2.545µs resolve=301ns route=198.806µs pagination=20ns write=4.659µs rows=1
+[TIMING] auth check=17.473µs total=228.011µs path=/query
+[TIMING] backpressure acquire=3.887µs total=235.715µs path=/query
+[TIMING] ratelimit check=341ns total=239.473µs path=/query
+[TIMING] shard=0 QueryWithSchema total=215.547µs query=199.086µs meta=902ns fetch=15.329µs rows=1
+[TIMING] handleQuery total=235.145µs decode=4.409µs resolve=371ns route=224.705µs pagination=30ns write=5.34µs rows=1
+[TIMING] auth check=19.506µs total=258.779µs path=/query
+[TIMING] backpressure acquire=3.106µs total=263.709µs path=/query
+[TIMING] ratelimit check=511ns total=265.482µs path=/query
+[TIMING] shard=0 QueryWithSchema total=211.45µs query=195.65µs meta=902ns fetch=14.678µs rows=1
+[TIMING] handleQuery total=228.933µs decode=2.896µs resolve=341ns route=220.407µs pagination=40ns write=4.949µs rows=1
+[TIMING] auth check=18.535µs total=251.666µs path=/query
+[TIMING] backpressure acquire=2.915µs total=256.765µs path=/query
+[TIMING] ratelimit check=450ns total=258.879µs path=/query
+[TIMING] shard=0 QueryWithSchema total=229.343µs query=209.927µs meta=1.322µs fetch=17.854µs rows=1
+[TIMING] handleQuery total=250.534µs decode=3.988µs resolve=381ns route=238.611µs pagination=40ns write=7.214µs rows=1
+[TIMING] auth check=19.507µs total=274.529µs path=/query
+[TIMING] backpressure acquire=2.715µs total=279.208µs path=/query
+[TIMING] ratelimit check=491ns total=281.091µs path=/query
+[TIMING] shard=0 QueryWithSchema total=216.66µs query=199.387µs meta=952ns fetch=16.101µs rows=1
+[TIMING] handleQuery total=234.774µs decode=3.276µs resolve=350ns route=225.887µs pagination=51ns write=4.929µs rows=1
+[TIMING] auth check=19.898µs total=258.86µs path=/query
+[TIMING] backpressure acquire=2.645µs total=263.448µs path=/query
+[TIMING] ratelimit check=551ns total=265.412µs path=/query
+[TIMING] shard=0 QueryWithSchema total=234.023µs query=214.015µs meta=1.223µs fetch=18.535µs rows=1
+[TIMING] handleQuery total=253.659µs decode=3.496µs resolve=351ns route=243.03µs pagination=30ns write=6.432µs rows=1
+[TIMING] auth check=19.917µs total=278.106µs path=/query
+[TIMING] backpressure acquire=3.437µs total=283.466µs path=/query
+[TIMING] ratelimit check=501ns total=285.299µs path=/query
+[TIMING] shard=0 QueryWithSchema total=192.243µs query=177.014µs meta=1.012µs fetch=13.866µs rows=1
+[TIMING] handleQuery total=209.717µs decode=3.026µs resolve=341ns route=201.321µs pagination=30ns write=4.669µs rows=1
+[TIMING] auth check=19.727µs total=233.431µs path=/query
+[TIMING] backpressure acquire=2.826µs total=238.04µs path=/query
+[TIMING] ratelimit check=481ns total=239.784µs path=/query
+2026/02/17 16:24:28 INFO received shutdown signal

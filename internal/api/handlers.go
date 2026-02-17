@@ -81,11 +81,15 @@ type shardInfo struct {
 }
 
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
+	t0 := time.Now()
+	
 	var req queryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, queryResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
+	tDecode := time.Since(t0)
+	
 	if req.SQL == "" {
 		writeJSON(w, http.StatusBadRequest, queryResponse{Error: "sql field is required"})
 		return
@@ -103,24 +107,31 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve target index
+	t1 := time.Now()
 	idx, err := s.resolveIndex(req.Index)
+	tResolve := time.Since(t1)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, queryResponse{Error: err.Error()})
 		return
 	}
 
+	t2 := time.Now()
 	result, err := idx.Router.Route(r.Context(), req.SQL, req.PartitionKey)
+	tRoute := time.Since(t2)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, queryResponse{Error: err.Error()})
 		return
 	}
 
 	// Apply pagination if specified
+	t3 := time.Now()
 	rows := result.Rows
 	if req.Limit > 0 || req.Offset > 0 {
 		rows = applyPagination(rows, req.Offset, req.Limit)
 	}
-
+	tPagination := time.Since(t3)
+	
+	t4 := time.Now()
 	writeJSON(w, http.StatusOK, queryResponse{
 		Success:      true,
 		Columns:      result.Columns,
@@ -128,6 +139,15 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		RowsAffected: result.RowsAffected,
 		ShardID:      result.ShardID,
 	})
+	tWrite := time.Since(t4)
+	
+	tTotal := time.Since(t0)
+	
+	// Log timing breakdown for read queries
+	if !isWriteSQL(req.SQL) {
+		fmt.Fprintf(os.Stderr, "[TIMING] handleQuery total=%v decode=%v resolve=%v route=%v pagination=%v write=%v rows=%d\n",
+			tTotal, tDecode, tResolve, tRoute, tPagination, tWrite, len(rows))
+	}
 }
 
 func (s *Server) handleListShards(w http.ResponseWriter, r *http.Request) {

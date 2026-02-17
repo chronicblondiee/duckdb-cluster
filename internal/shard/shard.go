@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -65,12 +67,16 @@ func (s *Shard) Query(ctx context.Context, query string, args ...any) ([]map[str
 }
 
 func (s *Shard) QueryWithSchema(ctx context.Context, query string, args ...any) (*QueryResultSet, error) {
+	t0 := time.Now()
+	
 	rows, err := s.db.QueryContext(ctx, query, args...)
+	tQuery := time.Since(t0)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	t1 := time.Now()
 	cols, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -85,7 +91,9 @@ func (s *Shard) QueryWithSchema(ctx context.Context, query string, args ...any) 
 	for i, ct := range colTypes {
 		types[i] = ct.DatabaseTypeName()
 	}
+	tMeta := time.Since(t1)
 
+	t2 := time.Now()
 	var results []map[string]any
 	for rows.Next() {
 		vals := make([]any, len(cols))
@@ -102,10 +110,17 @@ func (s *Shard) QueryWithSchema(ctx context.Context, query string, args ...any) 
 		}
 		results = append(results, row)
 	}
+	tFetch := time.Since(t2)
 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	
+	tTotal := time.Since(t0)
+	
+	// Log timing breakdown for shard queries
+	fmt.Fprintf(os.Stderr, "[TIMING] shard=%d QueryWithSchema total=%v query=%v meta=%v fetch=%v rows=%d\n",
+		s.ID, tTotal, tQuery, tMeta, tFetch, len(results))
 
 	return &QueryResultSet{
 		Columns: cols,
