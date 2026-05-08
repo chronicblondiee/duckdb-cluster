@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -95,37 +96,39 @@ func (r *Router) handleWrite(ctx context.Context, sqlStr string, partitionKey st
 }
 
 func (r *Router) handleRead(ctx context.Context, sqlStr string) (*QueryResult, error) {
-	// Check if query requires special handling (aggregations, ORDER BY, LIMIT, etc.)
+	// Fast path: single shard — execute directly, no merge needed.
+	if r.Manager.ShardCount() == 1 {
+		s := r.Manager.GetShard(0)
+		rs, err := s.QueryWithSchema(ctx, sqlStr)
+		if err != nil {
+			return nil, err
+		}
+		return &QueryResult{Columns: rs.Columns, Rows: rs.Rows, ShardID: 0}, nil
+	}
+
 	needsMergeEngine := RequiresMergeEngine(sqlStr)
-	
+
 	var resultSets []*shard.QueryResultSet
 	var err error
-	
+
 	if needsMergeEngine && r.MergeEngine != nil {
-		// For queries requiring merge engine, we need to:
-		// 1. Extract base table data from all shards
-		// 2. Merge in the merge engine
-		// 3. Apply the full query logic
-		
-		// First, get the base table name
 		tableName := ExtractTableName(sqlStr)
 		if tableName == "" {
 			return nil, fmt.Errorf("could not extract table name from query")
 		}
-		
-		// Query all data from the table across shards
-		baseQuery := fmt.Sprintf("SELECT * FROM %s", tableName)
+
+		// Push WHERE, ORDER BY, and LIMIT to shards to reduce data transferred.
+		baseQuery := buildShardQuery(tableName, sqlStr)
 		resultSets, err = r.Manager.QueryAllWithSchema(ctx, baseQuery)
 		if err != nil {
 			return nil, err
 		}
-		
-		// Merge and apply the original query
+
 		merged, err := r.MergeEngine.MergeAndQuery(ctx, sqlStr, tableName, resultSets)
 		if err != nil {
 			return nil, fmt.Errorf("merge and query: %w", err)
 		}
-		
+
 		var cols []string
 		if len(merged) > 0 {
 			for k := range merged[0] {
@@ -134,15 +137,15 @@ func (r *Router) handleRead(ctx context.Context, sqlStr string) (*QueryResult, e
 		} else if len(resultSets) > 0 && len(resultSets[0].Columns) > 0 {
 			cols = resultSets[0].Columns
 		}
-		
+
 		return &QueryResult{
 			Columns: cols,
 			Rows:    merged,
 			ShardID: -1,
 		}, nil
 	}
-	
-	// For simple queries, use the existing flow
+
+	// For simple queries (no aggregation/ORDER BY/LIMIT), fan out and concatenate.
 	resultSets, err = r.Manager.QueryAllWithSchema(ctx, sqlStr)
 	if err != nil {
 		return nil, err
@@ -220,6 +223,66 @@ func ExtractTableName(sql string) string {
 		return tokens[0]
 	}
 	return ""
+}
+
+// buildShardQuery constructs a query to push down to each shard.
+// It keeps the WHERE, ORDER BY, and LIMIT clauses from the original query
+// so each shard returns a pre-filtered, pre-sorted, bounded result set.
+// The merge engine then re-applies the full query for correct global semantics.
+func buildShardQuery(tableName, sqlStr string) string {
+	q := fmt.Sprintf("SELECT * FROM %s", tableName)
+
+	where := extractClause(sqlStr, "WHERE", []string{"GROUP BY", "ORDER BY", "LIMIT", "HAVING"})
+	if where != "" {
+		q += " WHERE " + where
+	}
+
+	orderBy := extractClause(sqlStr, "ORDER BY", []string{"LIMIT"})
+	if orderBy != "" {
+		q += " ORDER BY " + orderBy
+	}
+
+	// For LIMIT+OFFSET, push LIMIT (limit+offset) to each shard so enough
+	// candidate rows survive for the merge engine to apply the real OFFSET.
+	limitStr := extractClause(sqlStr, "LIMIT", []string{"OFFSET"})
+	offsetStr := extractClause(sqlStr, "OFFSET", nil)
+	if limitStr != "" {
+		limit, lErr := strconv.Atoi(strings.TrimSpace(limitStr))
+		offset := 0
+		if offsetStr != "" {
+			offset, _ = strconv.Atoi(strings.TrimSpace(offsetStr))
+		}
+		if lErr == nil {
+			q += fmt.Sprintf(" LIMIT %d", limit+offset)
+		}
+	}
+
+	return q
+}
+
+// extractClause extracts the content after a SQL keyword up to any of the
+// terminator keywords (or end of string). Returns "" if the keyword is absent.
+func extractClause(sql, keyword string, terminators []string) string {
+	upper := strings.ToUpper(sql)
+	idx := strings.Index(upper, keyword)
+	if idx == -1 {
+		return ""
+	}
+
+	after := sql[idx+len(keyword):]
+	upperAfter := strings.ToUpper(after)
+
+	end := len(after)
+	for _, term := range terminators {
+		ti := strings.Index(upperAfter, term)
+		if ti != -1 && ti < end {
+			end = ti
+		}
+	}
+
+	clause := strings.TrimSpace(after[:end])
+	clause = strings.TrimRight(clause, "; ")
+	return clause
 }
 
 var statementKeywords = map[string]struct{}{

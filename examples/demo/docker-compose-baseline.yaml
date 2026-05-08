@@ -1,0 +1,33 @@
+services:
+  standalone:
+    build:
+      context: ../..
+      dockerfile: examples/demo/standalone/Dockerfile
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  cluster-baseline:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "8091:8080"
+    volumes:
+      - cluster-data:/data
+      - ./config-baseline.yaml:/etc/duckdb-cluster/config.yaml:ro
+    command: ["start", "--config", "/etc/duckdb-cluster/config.yaml"]
+    healthcheck:
+      test: ["CMD", "duckdb-cluster", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  cluster-data:

@@ -41,7 +41,14 @@ type FieldMapping struct {
 type Mapping struct {
 	Fields  map[string]*FieldMapping `json:"fields"`
 	Dynamic bool                     `json:"dynamic"` // true = auto-add new fields
+	dirty   bool                     // true when schema evolved since last reset
 }
+
+// MarkClean resets the dirty flag.
+func (m *Mapping) MarkClean() { m.dirty = false }
+
+// Dirty returns true if the mapping has changed since the last MarkClean.
+func (m *Mapping) Dirty() bool { return m.dirty }
 
 // Clone returns a deep copy of the mapping so the original is not mutated.
 func (m *Mapping) Clone() *Mapping {
@@ -222,6 +229,7 @@ func (m *Mapping) EvolveSchema(ctx context.Context, manager *shard.Manager, tabl
 	for _, name := range newFields {
 		fm := InferFieldFromValue(name, doc[name])
 		m.Fields[name] = fm
+		m.dirty = true
 
 		alterSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",
 			quoteIdent(tableName), quoteIdent(name), fm.DuckDBType())

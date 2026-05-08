@@ -56,6 +56,16 @@ func (m *MergeEngine) Merge(ctx context.Context, sqlQuery string, results []*sha
 		return []map[string]any{}, nil
 	}
 
+	// Fast path: if the query doesn't need re-aggregation or re-ordering,
+	// just concatenate shard results — no need for a temp DuckDB.
+	if !RequiresMergeEngine(sqlQuery) {
+		var merged []map[string]any
+		for _, rs := range results {
+			merged = append(merged, rs.Rows...)
+		}
+		return merged, nil
+	}
+
 	// For aggregations, just concatenate — the caller (handleRead)
 	// uses MergeAndQuery for proper re-aggregation when needed.
 	if containsAggregation(sqlQuery) {
@@ -201,7 +211,7 @@ func (m *MergeEngine) MergeAndQueryFromMaps(ctx context.Context, originalQuery s
 
 // batchInsertResultSets inserts rows from QueryResultSets in batches.
 func batchInsertResultSets(ctx context.Context, db *sql.DB, table string, columns []string, results []*shard.QueryResultSet) error {
-	const batchSize = 500
+	const batchSize = 5000
 
 	quotedCols := strings.Join(quoteIdentifiers(columns), ", ")
 	numCols := len(columns)
@@ -226,7 +236,7 @@ func batchInsertResultSets(ctx context.Context, db *sql.DB, table string, column
 
 // batchInsertMaps inserts map rows in batches.
 func batchInsertMaps(ctx context.Context, db *sql.DB, table string, columns []string, rows []map[string]any) error {
-	const batchSize = 500
+	const batchSize = 5000
 
 	quotedCols := strings.Join(quoteIdentifiers(columns), ", ")
 	numCols := len(columns)

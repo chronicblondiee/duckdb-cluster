@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/chronicblondiee/duckdb-cluster/internal/router"
 )
@@ -12,14 +13,14 @@ import (
 // IndexDocument indexes a JSON document into the index.
 // It handles auto-table creation, schema evolution, and shard routing.
 func (idx *Index) IndexDocument(ctx context.Context, doc map[string]any) (*router.QueryResult, error) {
+	// Phase 1: Hold lock only for state check, schema evolution, and SQL building.
 	idx.mu.Lock()
-	defer idx.mu.Unlock()
 
 	if idx.Meta.State != StateOpen {
+		idx.mu.Unlock()
 		return nil, fmt.Errorf("index %q is closed", idx.Meta.Name)
 	}
 
-	// Extract partition key
 	pkField := idx.Meta.Settings.PartitionKeyField
 	if pkField == "" {
 		pkField = "_id"
@@ -29,34 +30,37 @@ func (idx *Index) IndexDocument(ctx context.Context, doc map[string]any) (*route
 		partitionKey = fmt.Sprintf("%v", pk)
 	}
 	if partitionKey == "" {
+		idx.mu.Unlock()
 		return nil, fmt.Errorf("document missing partition key field %q", pkField)
 	}
 
 	tableName := DefaultDocTable
 
-	// If no mapping fields exist, this is the first document — infer and create table
 	if len(idx.Mapping.Fields) == 0 {
 		inferred := InferMappingFromDocument(doc)
 		idx.Mapping.Fields = inferred.Fields
+		idx.Mapping.dirty = true
 
 		createSQL := idx.Mapping.GenerateCreateTableSQL(tableName)
 		if createSQL != "" {
 			if err := idx.Manager.ExecuteOnAll(ctx, createSQL); err != nil {
+				idx.mu.Unlock()
 				return nil, fmt.Errorf("create table from first document: %w", err)
 			}
 		}
 	} else {
-		// Evolve schema for new fields
 		if err := idx.Mapping.EvolveSchema(ctx, idx.Manager, tableName, doc); err != nil {
+			idx.mu.Unlock()
 			return nil, fmt.Errorf("evolve schema: %w", err)
 		}
 	}
 
-	// Build INSERT SQL
 	insertSQL, args := buildInsertSQL(tableName, idx.Mapping, doc)
-
-	// Route to shard
 	shardID := router.HashRoute(partitionKey, idx.Manager.ShardCount())
+
+	idx.mu.Unlock()
+
+	// Phase 2: Execute insert without holding the lock.
 	s := idx.Manager.GetShard(shardID)
 	result, err := s.Execute(ctx, insertSQL, args...)
 	if err != nil {
@@ -71,21 +75,14 @@ func (idx *Index) IndexDocument(ctx context.Context, doc map[string]any) (*route
 }
 
 // IndexDocumentBulk indexes multiple documents in a single call.
-// Documents are grouped by target shard for efficient batch execution.
-// The index lock is held only during schema evolution and SQL building,
-// then released before executing inserts on shards.
+// Documents are grouped by target shard, then inserted with a single
+// multi-row INSERT per shard executed in parallel.
 func (idx *Index) IndexDocumentBulk(ctx context.Context, docs []map[string]any) (int64, int, error) {
 	if len(docs) == 0 {
 		return 0, 0, nil
 	}
 
-	// Phase 1: Hold lock for schema evolution + SQL building
-	type shardInsert struct {
-		shardID int
-		sql     string
-		args    []any
-	}
-
+	// Phase 1: Hold lock for schema evolution + routing
 	idx.mu.Lock()
 
 	if idx.Meta.State != StateOpen {
@@ -100,14 +97,13 @@ func (idx *Index) IndexDocumentBulk(ctx context.Context, docs []map[string]any) 
 	tableName := DefaultDocTable
 	numShards := idx.Manager.ShardCount()
 
-	var inserts []shardInsert
 	var failed int
 
 	for _, doc := range docs {
-		// Ensure schema is ready (evolve if needed)
 		if len(idx.Mapping.Fields) == 0 {
 			inferred := InferMappingFromDocument(doc)
 			idx.Mapping.Fields = inferred.Fields
+			idx.Mapping.dirty = true
 			createSQL := idx.Mapping.GenerateCreateTableSQL(tableName)
 			if createSQL != "" {
 				if err := idx.Manager.ExecuteOnAll(ctx, createSQL); err != nil {
@@ -121,7 +117,21 @@ func (idx *Index) IndexDocumentBulk(ctx context.Context, docs []map[string]any) 
 				continue
 			}
 		}
+	}
 
+	// Build sorted column list once for consistent ordering
+	colNames := make([]string, 0, len(idx.Mapping.Fields))
+	for n := range idx.Mapping.Fields {
+		colNames = append(colNames, n)
+	}
+	sort.Strings(colNames)
+	mappingSnapshot := idx.Mapping
+
+	idx.mu.Unlock()
+
+	// Phase 2: Group docs by shard
+	shardDocs := make(map[int][]map[string]any, numShards)
+	for _, doc := range docs {
 		pk, ok := doc[pkField]
 		if !ok || fmt.Sprintf("%v", pk) == "" {
 			failed++
@@ -129,40 +139,66 @@ func (idx *Index) IndexDocumentBulk(ctx context.Context, docs []map[string]any) 
 		}
 		partitionKey := fmt.Sprintf("%v", pk)
 		shardID := router.HashRoute(partitionKey, numShards)
-
-		insertSQL, args := buildInsertSQL(tableName, idx.Mapping, doc)
-		if insertSQL == "" {
-			failed++
-			continue
-		}
-		inserts = append(inserts, shardInsert{shardID: shardID, sql: insertSQL, args: args})
+		shardDocs[shardID] = append(shardDocs[shardID], doc)
 	}
 
-	idx.mu.Unlock()
+	// Phase 3: Build and execute one multi-row INSERT per shard, in parallel
+	quotedCols := make([]string, len(colNames))
+	for i, n := range colNames {
+		quotedCols[i] = quoteIdent(n)
+	}
+	colList := strings.Join(quotedCols, ", ")
+	rowPlaceholder := "(" + strings.Repeat("?, ", len(colNames)-1) + "?)"
 
-	// Phase 2: Execute inserts without holding the index lock.
-	// Group by shard for locality.
-	shardGroups := make(map[int][]shardInsert, numShards)
-	for _, ins := range inserts {
-		shardGroups[ins.shardID] = append(shardGroups[ins.shardID], ins)
+	type shardResult struct {
+		affected int64
+		failed   int
 	}
 
-	var totalAffected int64
-	for shardID, group := range shardGroups {
-		s := idx.Manager.GetShard(shardID)
-		if s == nil {
-			failed += len(group)
-			continue
-		}
-		for _, ins := range group {
-			result, err := s.Execute(ctx, ins.sql, ins.args...)
+	var wg sync.WaitGroup
+	results := make([]shardResult, numShards)
+
+	for shardID, groupDocs := range shardDocs {
+		wg.Add(1)
+		go func(sid int, gdocs []map[string]any) {
+			defer wg.Done()
+
+			s := idx.Manager.GetShard(sid)
+			if s == nil {
+				results[sid] = shardResult{failed: len(gdocs)}
+				return
+			}
+
+			// Build multi-row INSERT
+			placeholders := make([]string, len(gdocs))
+			values := make([]any, 0, len(gdocs)*len(colNames))
+			for i, doc := range gdocs {
+				placeholders[i] = rowPlaceholder
+				for _, col := range colNames {
+					val := doc[col]
+					values = append(values, convertValue(mappingSnapshot.Fields[col], val))
+				}
+			}
+
+			insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s",
+				quoteIdent(tableName), colList, strings.Join(placeholders, ", "))
+
+			result, err := s.Execute(ctx, insertSQL, values...)
 			if err != nil {
-				failed++
-				continue
+				results[sid] = shardResult{failed: len(gdocs)}
+				return
 			}
 			affected, _ := result.RowsAffected()
-			totalAffected += affected
-		}
+			results[sid] = shardResult{affected: affected}
+		}(shardID, groupDocs)
+	}
+
+	wg.Wait()
+
+	var totalAffected int64
+	for _, r := range results {
+		totalAffected += r.affected
+		failed += r.failed
 	}
 
 	return totalAffected, failed, nil

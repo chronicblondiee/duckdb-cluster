@@ -240,8 +240,11 @@ func (s *Server) handleIndexDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Persist mapping updates
-	s.registry.SaveCatalog()
+	// Persist mapping updates only when schema actually changed
+	if idx.Mapping.Dirty() {
+		s.registry.SaveCatalog()
+		idx.Mapping.MarkClean()
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"result":   "created",
@@ -275,7 +278,10 @@ func (s *Server) handleBulkDocs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.registry.SaveCatalog()
+	if idx.Mapping.Dirty() {
+		s.registry.SaveCatalog()
+		idx.Mapping.MarkClean()
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"took":      0,

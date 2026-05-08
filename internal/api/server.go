@@ -259,22 +259,36 @@ func (s *Server) backpressureMiddleware() func(http.Handler) http.Handler {
 				return
 			}
 
+			t0 := time.Now()
 			var release func()
 			var err error
 
-			switch r.Method {
-			case http.MethodGet:
+			// Classify by semantics, not HTTP method.
+			// POST /query and POST /multi-query are read operations.
+			isRead := r.Method == http.MethodGet ||
+				r.URL.Path == "/query" ||
+				r.URL.Path == "/multi-query"
+
+			if isRead {
 				release, err = s.backpressure.AcquireRead(r.Context())
-			default:
+			} else {
 				release, err = s.backpressure.AcquireWrite(r.Context())
 			}
+
+			tAcquire := time.Since(t0)
 
 			if err != nil {
 				slog.Warn("backpressure rejected request", "method", r.Method, "path", r.URL.Path, "error", err)
 				http.Error(w, "Service Unavailable: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}
-			defer release()
+
+			defer func() {
+				release()
+				tTotal := time.Since(t0)
+				fmt.Fprintf(os.Stderr, "[TIMING] backpressure acquire=%v total=%v path=%s\n",
+					tAcquire, tTotal, r.URL.Path)
+			}()
 
 			next.ServeHTTP(w, r)
 		})

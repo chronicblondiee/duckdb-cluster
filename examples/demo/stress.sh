@@ -2,7 +2,26 @@
 set -euo pipefail
 
 # ============================================================
-# DuckDB Cluster — Stress / Load Testing
+# ⚠️  DEPRECATED - USE stress-wrk.sh INSTEAD ⚠️
+# ============================================================
+# This script has been deprecated due to critical performance
+# measurement issues. It spawns thousands of curl subprocesses
+# which creates massive client-side overhead (~8 seconds) that
+# is incorrectly measured as "server latency".
+#
+# Actual server latency: ~0.4ms (measured with proper tools)
+# This script reports: ~8000ms (includes process creation overhead)
+#
+# 🔧 USE THE NEW SCRIPT: stress-wrk.sh
+#   - Uses wrk with connection pooling
+#   - Accurate latency measurement (~0.4ms)
+#   - 500x better throughput
+#   - Industry-standard tooling
+#
+# See: TEST_4_RESULTS.md and PERFORMANCE_INVESTIGATION_SUMMARY.md
+# ============================================================
+#
+# DuckDB Cluster — Stress / Load Testing (OLD METHOD)
 #
 # Measures throughput and latency under concurrent load.
 # Runs against the demo 3-node cluster.
@@ -28,6 +47,7 @@ WRITE_CONCURRENCY="${WRITE_CONCURRENCY:-10}"
 READ_CONCURRENCY="${READ_CONCURRENCY:-20}"
 DURATION="${DURATION:-30}"
 BULK_SIZE="${BULK_SIZE:-100}"
+SHARD_COUNT="${SHARD_COUNT:-3}"
 
 MAX_WAIT=120
 AUTH_TOKEN=""
@@ -201,11 +221,11 @@ if [[ -z "$AUTH_TOKEN" || "$AUTH_TOKEN" == "null" ]]; then
 fi
 echo -e "  Auth token: ${GREEN}obtained${NC}"
 
-echo "  Creating stress-test index (3 shards)..."
+echo "  Creating stress-test index ($SHARD_COUNT shards)..."
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$ALL_URL/indices/stress-test" \
     -H "Authorization: Bearer $AUTH_TOKEN" \
     -H "Content-Type: application/json" \
-    -d '{"settings":{"shard_count":3,"partition_key_field":"id"}}' 2>/dev/null) || true
+    -d "{\"settings\":{\"shard_count\":$SHARD_COUNT,\"partition_key_field\":\"id\"}}" 2>/dev/null) || true
 if [[ "$HTTP_CODE" == "201" || "$HTTP_CODE" == "200" ]]; then
     echo -e "  Index: ${GREEN}created${NC}"
 else
@@ -214,7 +234,7 @@ fi
 
 RESULTS_DIR=$(mktemp -d)
 echo -e "  Results dir: $RESULTS_DIR"
-echo -e "  Config: writers=${BOLD}$WRITE_CONCURRENCY${NC}  readers=${BOLD}$READ_CONCURRENCY${NC}  duration=${BOLD}${DURATION}s${NC}  bulk_size=${BOLD}$BULK_SIZE${NC}"
+echo -e "  Config: writers=${BOLD}$WRITE_CONCURRENCY${NC}  readers=${BOLD}$READ_CONCURRENCY${NC}  duration=${BOLD}${DURATION}s${NC}  bulk_size=${BOLD}$BULK_SIZE${NC}  shards=${BOLD}$SHARD_COUNT${NC}"
 
 # ============================================================
 # Phase 2: Write Stress
@@ -417,7 +437,7 @@ for i in 1 2 3; do
     curl -s -o /dev/null -X PUT "$ALL_URL/indices/fanout-$i" \
         -H "Authorization: Bearer $AUTH_TOKEN" \
         -H "Content-Type: application/json" \
-        -d '{"settings":{"shard_count":2,"partition_key_field":"id"}}' 2>/dev/null || true
+        -d "{\"settings\":{\"shard_count\":$SHARD_COUNT,\"partition_key_field\":\"id\"}}" 2>/dev/null || true
 
     # Seed each with a few documents
     for j in $(seq 1 20); do
